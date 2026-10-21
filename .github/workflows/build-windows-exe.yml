@@ -38,9 +38,32 @@ jobs:
       # La porte qualite complete tourne AVANT l'empaquetage : si un test
       # echoue (par exemple un crash au premier rendu), aucun .exe casse n'est
       # publie. C'est exactement ce qui manquait en v0.5.0.
+      # Chaque suite est lancee separement : en cas d'echec on publie une
+      # ANNOTATION (lisible via l'API meme quand les logs ne sont pas
+      # telechargeables) avec la fin de la sortie du test fautif.
       - name: Tests (ville, integration, rendu, bundle)
         shell: bash
-        run: node tools/smoke_test.mjs && node tools/test_features.mjs && node tools/test_integration.mjs && node tools/test_v04.mjs && node tools/test_v05.mjs && node tools/check_assets.mjs && node tools/test_render.mjs && node tools/build_single_file.mjs && node tools/test_bundle.mjs
+        run: |
+          FAILED=0
+          for t in smoke_test test_features test_integration test_v04 test_v05 check_assets test_render; do
+            echo "== $t"
+            if node "tools/$t.mjs" > "out_$t.log" 2>&1; then
+              tail -n 2 "out_$t.log"
+            else
+              FAILED=1
+              echo "::error title=$t::$(tail -n 8 out_$t.log | tr '\n' ' ' | head -c 500)"
+            fi
+          done
+          echo "== build"
+          node tools/build_single_file.mjs > out_build.log 2>&1 || FAILED=1
+          echo "== test_bundle"
+          if node tools/test_bundle.mjs > out_bundle.log 2>&1; then
+            tail -n 2 out_bundle.log
+          else
+            FAILED=1
+            echo "::error title=test_bundle::$(tail -n 12 out_bundle.log | tr '\n' ' ' | head -c 500)"
+          fi
+          exit $FAILED
 
       - name: Installer les dependances desktop
         shell: bash
