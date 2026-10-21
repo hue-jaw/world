@@ -38,6 +38,14 @@ jobs:
       # La porte qualite complete tourne AVANT l'empaquetage : si un test
       # echoue (par exemple un crash au premier rendu), aucun .exe casse n'est
       # publie. C'est exactement ce qui manquait en v0.5.0.
+      - name: Diagnostic environnement
+        shell: bash
+        run: |
+          echo "::notice title=node::$(node -v)"
+          echo "::notice title=web_node_modules::$(ls web/node_modules 2>&1 | head -c 200)"
+          echo "::notice title=three::$(ls web/node_modules/three/build 2>&1 | head -c 200)"
+          echo "::notice title=package::$(cat web/package.json | head -c 400)"
+
       # Chaque suite est lancee separement : en cas d'echec on publie une
       # ANNOTATION (lisible via l'API meme quand les logs ne sont pas
       # telechargeables) avec la fin de la sortie du test fautif.
@@ -51,7 +59,7 @@ jobs:
               tail -n 2 "out_$t.log"
             else
               FAILED=1
-              echo "::error title=$t::HEAD $(head -n 5 out_$t.log | tr '\n' ' ' | head -c 400) ||TAIL $(tail -n 5 out_$t.log | tr '\n' ' ' | head -c 400)"
+              echo "::error title=$t::HEAD $(head -n 18 out_$t.log | tr '\n' ' ' | head -c 400) ||TAIL $(tail -n 5 out_$t.log | tr '\n' ' ' | head -c 400)"
             fi
           done
           echo "== build"
