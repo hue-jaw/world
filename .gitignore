@@ -1,0 +1,19 @@
+# Prototype web
+web/node_modules/
+
+# Unreal Engine : fichiers generes (jamais versionnes)
+unreal/Binaries/
+unreal/Intermediate/
+unreal/Saved/
+unreal/DerivedDataCache/
+unreal/.vs/
+unreal/*.sln
+unreal/*.vcxproj*
+unreal/*.suo
+unreal/*.user
+unreal/Plugins/**/Binaries/
+unreal/Plugins/**/Intermediate/
+
+# Divers
+.DS_Store
+*.log

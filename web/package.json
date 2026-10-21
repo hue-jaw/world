@@ -1,0 +1,8 @@
+{
+  "name": "metropolis-vertical-slice",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "METROPOLIS - Vertical slice jouable (validation des systèmes open-world)",
+  "dependencies": { "three": "^0.170.0" }
+}
