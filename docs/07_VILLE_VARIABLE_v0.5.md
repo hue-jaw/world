@@ -170,6 +170,18 @@ autour du pôle d'affaires au nord-est ; la zone portuaire plafonne à 2 immeubl
 
 ---
 
+## 8 bis. Plan de contrôle (rendu logiciel, sans GPU)
+
+```
+node tools/render_plan.mjs   -> previews/city_plan_v0.5.png
+```
+
+Vue de dessus des **données** du jeu (pas un rendu 3D) : à gauche la métropole de 8,2 km
+(réseau, classes de voies, sens uniques, anneau, canal), à droite un zoom de 2 km sur le canal
+et le cœur — quartiers de `districtMap`, empreintes réelles des bâtiments streamés, ponts et
+giratoires. 771 empreintes de bâtiments, 129 ponts, 16 giratoires.
+C'est la preuve visuelle la plus directe de l'asymétrie qu'on puisse produire sans GPU.
+
 ## 9. Tests
 
 ```
