@@ -51,7 +51,7 @@ jobs:
               tail -n 2 "out_$t.log"
             else
               FAILED=1
-              echo "::error title=$t::$(tail -n 8 out_$t.log | tr '\n' ' ' | head -c 500)"
+              echo "::error title=$t::HEAD $(head -n 5 out_$t.log | tr '\n' ' ' | head -c 400) ||TAIL $(tail -n 5 out_$t.log | tr '\n' ' ' | head -c 400)"
             fi
           done
           echo "== build"
@@ -61,7 +61,7 @@ jobs:
             tail -n 2 out_bundle.log
           else
             FAILED=1
-            echo "::error title=test_bundle::$(tail -n 12 out_bundle.log | tr '\n' ' ' | head -c 500)"
+            echo "::error title=test_bundle::HEAD $(head -n 6 out_bundle.log | tr '\n' ' ' | head -c 400) ||TAIL $(tail -n 6 out_bundle.log | tr '\n' ' ' | head -c 300)"
           fi
           exit $FAILED
 
