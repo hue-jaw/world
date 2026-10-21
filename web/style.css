@@ -223,3 +223,9 @@ kbd { background:#1c2432; border:1px solid #3a465e; border-bottom-width:3px; bor
   font-size:11px; color:#7288a5; flex-wrap:wrap; }
 .pm-foot svg { vertical-align:-2px; color:#7ce38b; }
 .pm-foot kbd { background:#0d1520; border:1px solid #2c405e; border-radius:5px; padding:1px 5px; font-family:inherit; }
+
+/* nom de la rue courante (v0.5) */
+#clock-street { font-size:10.5px; letter-spacing:.7px; color:#8fb6e2; margin-top:3px;
+  max-width:190px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+#clock-street.oneway { color:#ffcf6b; }
+#clock-street.oneway::after { content:' ⇢'; }

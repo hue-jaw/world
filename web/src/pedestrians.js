@@ -86,7 +86,8 @@ class Citizen {
     this.stateT = 0; this.activity = '';
     this.visible = true;
     // départ : nœud piéton aléatoire
-    const n = pick(city.pedNodes);
+    const dry = city.pedNodesDry || city.pedNodes;
+    const n = pick(dry);
     this.pos.set(n.x, 0.15, n.z);
     this.planActivity(9, true);
   }

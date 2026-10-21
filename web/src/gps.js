@@ -112,7 +112,7 @@ export class GPSSystem {
   }
 
   /** A* borné : renvoie le chemin de nœuds (source → destination). */
-  _findPath(from, to, maxNodes = 4000) {
+  _findPath(from, to, maxNodes = 4000, ignoreOneWay = false) {
     if (!from || !to) return [];
     const open = new MinHeap();
     const g = new Map(), came = new Map(), closed = new Set();
@@ -131,6 +131,9 @@ export class GPSSystem {
       closed.add(ck);
       const gc = g.get(ck);
       for (let d = 0; d < 4; d++) {
+        // respecte les sens uniques (le joueur, lui, peut les ignorer à la
+        // conduite — d'où le repli en 2e passe si aucun chemin n'existe)
+        if (!ignoreOneWay && !this.city.canDrive(cur, d)) continue;
         const nb = this.city.nextNode(cur, d);
         if (!nb) continue;
         const nk = key(nb);
@@ -160,6 +163,10 @@ export class GPSSystem {
         const from = this.city.nearestNode(pp.x, pp.z);
         const to = this.city.nearestNode(this.target.x, this.target.z);
         this.route = this._findPath(from, to);
+        // filet de sécurité : si le réseau à sens uniques isole la cible,
+        // on recalcule en les ignorant plutôt que de laisser le joueur sans
+        // itinéraire (mieux vaut un guidage « piéton » qu'aucun guidage).
+        if (this.route.length < 2) this.route = this._findPath(from, to, 4000, true);
       } else this.route = [];
     }
 

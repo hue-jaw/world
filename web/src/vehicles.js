@@ -6,7 +6,7 @@
 // ============================================================================
 import * as THREE from 'three';
 import { CFG, Bus, clamp, lerp, damp, angleDelta, pick, rand, randRange, randInt, VEHICLE_TYPES, randomVehicleType } from './core.js';
-import { DIRS } from './city.js';
+import { DIRS, RING } from './city.js';
 import Assets from './assets.js';
 
 const V3 = () => new THREE.Vector3();
@@ -483,6 +483,10 @@ class TrafficDriver {
     this.isPolice = false;
   }
   startAt(node, dirIdx) {
+    // ne jamais placer une voiture à contresens d'un sens unique
+    if (!this.city.canDrive(node, dirIdx)) {
+      for (let k = 0; k < 4; k++) if (this.city.canDrive(node, (dirIdx + k) % 4)) { dirIdx = (dirIdx + k) % 4; break; }
+    }
     this.node = node; this.dirIdx = dirIdx;
     this.destNode = this.city.randomNode();
     this.city.lanePoint(node, dirIdx, this.waypoint);
@@ -492,7 +496,7 @@ class TrafficDriver {
   }
   advance() {
     const next = this.city.nextNode(this.node, this.dirIdx);
-    if (!next) { this.dirIdx ^= 1; this.advance(); return; }
+    if (!next || !this.city.canDrive(this.node, this.dirIdx)) { this.dirIdx ^= 1; this.advance(); return; }
     this.targetNode = next;
     this.city.lanePoint(next, this.dirIdx, this.waypoint);
     this.engaged = false;
@@ -502,13 +506,21 @@ class TrafficDriver {
     this.node = this.targetNode;
     if (!this.isPolice && this.node === this.destNode) this.destNode = this.city.randomNode();
     let best = null, bestScore = 1e18;
-    for (let d = 0; d < 4; d++) {
-      if (d === (this.dirIdx ^ 1)) continue;               // pas de demi-tour
-      const n = this.city.nextNode(this.node, d);
-      if (!n) continue;
-      const dist = Math.hypot(n.x - this.destNode.x, n.z - this.destNode.z);
-      const score = dist + rand() * (this.isPolice ? 6 : 55) + (d === this.dirIdx ? -12 : 0);
-      if (score < bestScore) { bestScore = score; best = d; }
+    const allowUTurn = { v: false };
+    for (let pass = 0; pass < 2 && best === null; pass++) {
+      // 1er passage : règles de circulation. 2e : demi-tour de secours si
+      // l'intersection est entièrement à sens unique (impasse réglementaire).
+      if (pass === 1) allowUTurn.v = true;
+      for (let d = 0; d < 4; d++) {
+        if (!allowUTurn.v && d === (this.dirIdx ^ 1)) continue;   // pas de demi-tour
+        if (!allowUTurn.v && !this.city.canDrive(this.node, d)) continue; // sens interdit
+        if (allowUTurn.v && Math.abs(this.node.x - (this.city.canalX ?? -1e9)) < 1 && (d === 2 || d === 3)) continue;
+        const n = this.city.nextNode(this.node, d);
+        if (!n) continue;
+        const dist = Math.hypot(n.x - this.destNode.x, n.z - this.destNode.z);
+        const score = dist + rand() * (this.isPolice ? 6 : 55) + (d === this.dirIdx ? -12 : 0);
+        if (score < bestScore) { bestScore = score; best = d; }
+      }
     }
     if (best === null) best = this.dirIdx ^ 1;             // cul-de-sac au bord
     this.dirIdx = best;
@@ -588,6 +600,76 @@ class TrafficDriver {
   }
 }
 
+// ======================== Conducteur d'autoroute ============================
+/**
+ * Fait circuler un véhicule sur l'anneau autoroutier (2×2 km), en respectant
+ * un couloir. L'anneau est un rectangle : on paramètre la position par une
+ * abscisse curviligne `s` et on vise un point situé 22 m devant.
+ *
+ * Pourquoi un conducteur dédié plutôt que le graphe : le ring traverse la
+ * grille tous les 64 m ; y router du trafic par nœuds produirait des
+ * demi-tours aux carrefours. Ici, la trajectoire est une simple boucle.
+ */
+export class HighwayDriver {
+  constructor(v, opts = {}) {
+    this.v = v;
+    this.isHighway = true;
+    this.dir = opts.dir ?? 1;              // 1 = sens horaire
+    this.lane = opts.lane ?? 7;            // décalage depuis l'axe de l'anneau
+    this.speed = opts.speed ?? 26;
+    const per = 8 * RING;                  // périmètre
+    this.perimeter = per;
+    this.s = ((opts.s ?? 0) % per + per) % per;
+    this._p = { x: 0, z: 0 };
+    this._t = { x: 0, z: 0 };
+  }
+
+  /**
+   * Point du couloir à l'abscisse curviligne s.
+   * On reste TOUJOURS à droite de l'axe de l'anneau (conduite à droite) :
+   * le signe du décalage dépend donc du sens de circulation.
+   */
+  _pointAt(s) {
+    const R = RING, side = 2 * R, per = 4 * side;
+    let d = ((s % per) + per) % per;
+    const lane = this.lane;
+    let x = 0, z = 0;
+    if (this.dir > 0) {
+      // sens 1 : bas (+x) → droite (+z) → haut (-x) → gauche (-z)
+      if (d < side) { x = -R + d; z = -R + lane; }
+      else if (d < 2 * side) { x = R - lane; z = -R + (d - side); }
+      else if (d < 3 * side) { x = R - (d - 2 * side); z = R - lane; }
+      else { x = -R + lane; z = R - (d - 3 * side); }
+    } else {
+      // sens inverse : gauche (+z) → haut (+x) → droite (-z) → bas (-x)
+      if (d < side) { x = -R - lane; z = -R + d; }
+      else if (d < 2 * side) { x = -R + (d - side); z = R + lane; }
+      else if (d < 3 * side) { x = R + lane; z = R - (d - 2 * side); }
+      else { x = R - (d - 3 * side); z = -R - lane; }
+    }
+    this._p.x = x; this._p.z = z;
+    return this._p;
+  }
+
+  update(dt, ctx) {
+    const v = this.v;
+    this.s += this.dir * v.vf * dt;
+    const target = this._pointAt(this.s + this.dir * 22);
+    const dx = target.x - v.pos.x, dz = target.z - v.pos.z;
+    const desired = Math.atan2(dx, dz);
+    v.inputs.steer = clamp(angleDelta(v.heading, desired) * 2.2, -1, 1);
+    if (v.vf < this.speed) v.inputs.throttle = 0.85;
+    else if (v.vf > this.speed + 2) { v.inputs.throttle = 0; v.inputs.brake = true; }
+    else { v.inputs.throttle = 0.2; v.inputs.brake = false; }
+    v.inputs.handbrake = false;
+    // recyclage : une voiture qui s'égare est replacée sur le couloir
+    if (!Number.isFinite(v.pos.x) || Math.hypot(v.pos.x, v.pos.z) > RING * 2.4) {
+      const p = this._pointAt(this.s);
+      v.placeAt(p.x, 0, p.z, Math.atan2(1, 0));
+    }
+  }
+}
+
 // ============================ Système trafic ================================
 export class TrafficSystem {
   constructor(scene, city) {
@@ -599,13 +681,18 @@ export class TrafficSystem {
     this._spawnT = 0; this._frame = 0;
     this.smoke = new TireSmoke(scene);
     this.playerVehicle = null;    // renseigné par main.js pour les effets
+    this.highway = [];            // trafic de l'anneau autoroutier
     Bus.on('crime', ({ severity }) => this.addHeat(severity));
   }
 
   init(ctx) {
     // Voitures garées le long des rues (prenables par le joueur)
     for (let i = 0; i < 26; i++) {
-      const node = this.city.randomNode();
+      let node = this.city.randomNode();
+      // pas de voiture garée dans le lit du canal
+      const cx = this.city.canalX ?? -1120;
+      for (let t = 0; t < 8 && Math.abs(node.x - cx) < 40; t++) node = this.city.randomNode();
+      if (Math.abs(node.x - cx) < 40) continue;
       const dirIdx = randInt(0, 3);
       const d = DIRS[dirIdx], r = { x: -d.z, z: d.x };
       const along = randRange(16, 46);
@@ -619,6 +706,20 @@ export class TrafficSystem {
     }
     // Pool IA initial
     for (let i = 0; i < 16; i++) this.spawnAI(ctx, true);
+    // Trafic autoroutier : 9 véhicules répartis sur l'anneau, deux sens
+    for (let i = 0; i < 9; i++) {
+      const dir = i % 2 === 0 ? 1 : -1;
+      const v = new Vehicle(this.scene, randomVehicleType());
+      const drv = new HighwayDriver(v, {
+        dir, lane: 5.5 + (i % 3) * 2.2,
+        s: (i / 9) * 8 * RING, speed: 24 + (i % 3) * 3,
+      });
+      const p = drv._pointAt(drv.s);
+      v.placeAt(p.x, p.z, Math.atan2(dir, 0));
+      v.driver = drv;
+      v.vel.x = 0; v.vel.z = 0; v.vf = drv.speed * 0.5;
+      this.highway.push(v); this.vehicles.push(v);
+    }
     // Une sportive offerte près du spawn joueur pour tester tout de suite
     // (garée le long de la route verticale x=32, à ~4 m du trottoir du spawn)
     const gift = new Vehicle(this.scene, 'Sportive');
@@ -666,7 +767,8 @@ export class TrafficSystem {
     }
     const playerPos = ctx.playerPos();
     for (let tries = 0; tries < 12; tries++) {
-      const node = anywhere && tries > 6 ? this.city.randomNode() : this.city.randomEdgeNode();
+      let node = anywhere && tries > 6 ? this.city.randomNode() : this.city.randomEdgeNode();
+      if (Math.abs(node.x - (this.city.canalX ?? -1120)) < 40) node = this.city.randomNode();
       const dirIdx = randInt(0, 3);
       if (!this.city.nextNode(node, dirIdx)) continue;
       const distP = Math.hypot(node.x - playerPos.x, node.z - playerPos.z);
@@ -880,6 +982,7 @@ export class TrafficSystem {
     for (const v of this.vehicles) {
       if (!v.active) continue;
       const drv = v.driver;
+      if (drv?.isHighway) drv.update(dt, ctx);
       if (drv instanceof TrafficDriver && !drv.isPolice) {
         const d = Math.hypot(v.pos.x - playerPos.x, v.pos.z - playerPos.z);
         if (d > CFG.traffic.despawnDist) { this.despawnAI(v); continue; }

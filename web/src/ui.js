@@ -12,7 +12,7 @@ export class UI {
   constructor(callbacks) {
     this.cb = callbacks;
     this.els = {
-      hud: $('hud'), clock: $('clock-time'), weather: $('clock-weather'),
+      hud: $('hud'), clock: $('clock-time'), weather: $('clock-weather'), street: $('clock-street'),
       money: $('hud-money'), wanted: $('hud-wanted'), deliveries: $('hud-deliveries'),
       objective: $('objective'), objTitle: $('objective-title'), objDist: $('objective-dist'), objTimer: $('objective-timer'),
       speedo: $('speedo'), speedVal: $('speedo-value'), gear: $('speedo-gear'),
@@ -151,6 +151,20 @@ export class UI {
       this.els.gamepad.classList.toggle('on', !!gp?.connected);
     }
     if (this.shopOpen) this._refreshShop(ctx);
+
+    // --- nom de rue (change en roulant) -----------------------------------
+    this._streetT = (this._streetT || 0) - dt;
+    if (this._streetT <= 0 && this.els.street) {
+      this._streetT = 0.25;
+      const pp = ctx.playerPos();
+      const info = ctx.city.streetAt?.(pp.x, pp.z);
+      const label = info ? (info.both ? info.primary : info.primary + (info.secondary ? ' · ' + info.secondary : '')) : '';
+      if (label !== this._streetLabel) {
+        this._streetLabel = label;
+        this.els.street.textContent = label || '—';
+        this.els.street.classList.toggle('oneway', !!info?.secondary);
+      }
+    }
 
     this._updateCompass(ctx, obj);
     this._miniT -= dt;

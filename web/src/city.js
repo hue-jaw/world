@@ -5,7 +5,8 @@
 // + Splines routières exportées en DataAsset de navigation.
 // ============================================================================
 import * as THREE from 'three';
-import { CFG, rand, randRange, randInt, pick, chance, districtForBlock, DISTRICTS, clamp } from './core.js';
+import { CFG, rand, randRange, randInt, pick, chance, districtForBlock, DISTRICTS, clamp, mulberry32 } from './core.js';
+import { StreetGrid, STREET_CLASSES, hash2 } from './streets.js';
 import { facade as facadeHD, asphaltHD, sidewalkHD, grassHD, metroGroundHD, groundDetailHD } from './textures.js';
 
 const { blocksPerSide: N, pitch: P, platformSize: PLAT, buildZone: BZ, laneOffset } = CFG.city;
@@ -29,8 +30,24 @@ const blockX = (k) => -WORLD_HALF + k * P;    // route k (cœur : 0..7)
 const metroX = (i) => -WORLD_HALF + (i - CORE_I) * P;
 const nodeIndex = (x) => clamp(Math.round((x + WORLD_HALF) / P) + CORE_I, 0, MN);
 // Autoroute en anneau + avenues radiales + circuit privé
-const RING = 2048, RING_W = 30, RADIAL_W = 26;
+export const RING = 2048;   // demi-côté de l'anneau autoroutier
+const RING_W = 30, RADIAL_W = 26;
 const CIRCUIT = { x: 2400, z: 2400, r: 168, w: 22 };
+// Canal : coupure Est-Ouest de la trame, avec un pont à chaque rue transversale.
+// Il casse la symétrie de la grille et sert de repère d'orientation.
+const CANAL = { x: -1120, w: 44, half: 22, quay: 22.6 };
+
+// Rues piétonnes : liste des lignes « passage » (aucune circulation automobile).
+let _passages = null;
+function passageLines(streets) {
+  if (_passages) return _passages;
+  _passages = { h: [], v: [] };
+  for (let k = 0; k <= 128; k++) {
+    if (streets.horizontal(k).klass === 'passage') _passages.h.push(k);
+    if (streets.vertical(k).klass === 'passage') _passages.v.push(k);
+  }
+  return _passages;
+}
 
 // ------------------------- Textures procédurales ----------------------------
 // Façades HAUTE DÉFINITION : 1024² (512² pour les petits bâtiments), albédo
@@ -301,19 +318,51 @@ export class City {
 
     // --- quartiers + blocs spéciaux ---
     const special = new Map([['2,4', 'park'], ['4,1', 'gas'], ['5,5', 'park']]);
-    for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) {
-      const type = special.get(i + ',' + j) || districtForBlock(i, j, N);
-      if (type === 'park') this.buildPark(blockCenter(i), blockCenter(j));
-      else if (type === 'gas') this.buildGasStation(blockCenter(i), blockCenter(j));
-      else this.buildBlock(blockCenter(i), blockCenter(j), type);
+    // Quartiers SECONDARIES fixes : ils cassent les anneaux concentriques.
+    // Un quartier d'affaires décentré, un quartier industriel au bord du canal
+    // (à l'ouest), une vieille ville au sud-est, un quartier étudiant au nord.
+    const poles = [
+      { i: 4.5, j: 1.5, r: 1.2, type: 'downtown' },
+      { i: 1.5, j: 4.5, r: 1.15, type: 'industrial' },
+      { i: 5.2, j: 5.0, r: 1.05, type: 'oldtown' },
+      { i: 2.0, j: 2.2, r: 1.1, type: 'commercial' },
+    ];
+    this.districtMap = [];
+    for (let i = 0; i < N; i++) {
+      this.districtMap[i] = [];
+      for (let j = 0; j < N; j++) {
+        let type = special.get(i + ',' + j) || districtForBlock(i, j, N);
+        // bruit déterministe : 22 % des blocs changent de nature
+        const h = hash2(i, j, 101);
+        if (!special.has(i + ',' + j)) {
+          if (h % 100 < 22) type = ['residential', 'commercial', 'oldtown', 'industrial', 'suburb'][(h >>> 7) % 5];
+          else if (h % 100 >= 96) type = 'microPark';     // placette de quartier
+        }
+        // aimantation aux pôles secondaires (distance euclidienne, pas un anneau)
+        for (const pole of poles) {
+          const d = Math.hypot(i - pole.i, j - pole.j);
+          if (d < pole.r) { type = pole.type; break; }
+        }
+        this.districtMap[i][j] = type;
+        const cx = blockCenter(i), cz = blockCenter(j);
+        if (type === 'park' || type === 'microPark') this.buildPark(cx, cz);
+        else if (type === 'gas') this.buildGasStation(cx, cz);
+        else this.buildBlock(cx, cz, DISTRICTS[type] ? type : 'residential');
+      }
     }
 
+    // la grille viaire doit exister AVANT le mobilier (nom + sens uniques)
+    this.buildStreetGrid();
+    this.buildStreetFurniture();
     this.finalizeTrees();
     this.buildRoadMarkings();
     this.buildStreetLights();
     this.buildTrafficLights();
     this.buildRoadGraph();
     this.buildPedGraph();
+    // les trottoirs du canal sont sous l'eau : on les retire des destinations
+    this.pedNodesDry = this.pedNodes.filter((n) => Math.abs(n.x - CANAL.x) > 32);
+    this.buildCanal();
     this.indexColliders();
     this.buildMetroGround();
     this.buildHighways();
@@ -353,6 +402,277 @@ export class City {
     grass.matrixAutoUpdate = false; grass.updateMatrix(); this.scene.add(grass);
   }
 
+  // ======================= MOBILIER VIAIRE (v0.5) ==========================
+  /**
+   * Marque au sol un sens unique : flèche blanche peinte dans la voie.
+   * Une seule texture, un seul InstancedMesh pour toutes les flèches.
+   */
+  _oneWayArrowTexture() {
+    if (this._arrowTex) return this._arrowTex;
+    const c = document.createElement('canvas'); c.width = 128; c.height = 256;
+    const g = c.getContext('2d');
+    if (g) {
+      g.clearRect(0, 0, 128, 256);
+      g.fillStyle = 'rgba(232,232,225,0.92)';
+      // hampe
+      g.fillRect(52, 96, 24, 130);
+      // pointe
+      g.beginPath(); g.moveTo(64, 24); g.lineTo(112, 104); g.lineTo(16, 104); g.closePath(); g.fill();
+    }
+    const t = new THREE.CanvasTexture(c);
+    t.anisotropy = 4;
+    this._arrowTex = t;
+    return t;
+  }
+
+  /**
+   * Mobilier de voirie : flèches de sens unique, terre-pleins des avenues,
+   * mini-giratoires, bollards des rues piétonnes. Tout est instancié.
+   */
+  buildStreetFurniture() {
+    const S = this.streets;
+    if (!S) return;
+    const rng = mulberry32(0x5EED1);   // RNG local : le mobilier ne décale pas le monde
+    const group = new THREE.Group();
+    const dummy = new THREE.Object3D();
+
+    // ---------- 1. flèches de sens unique (marquage au sol) ----------------
+    const arrowMat = new THREE.MeshBasicMaterial({
+      map: this._oneWayArrowTexture(), transparent: true, depthWrite: false,
+      polygonOffset: true, polygonOffsetFactor: -4, toneMapped: false,
+      side: THREE.DoubleSide, opacity: 0.95,
+    });
+    const arrowGeo = new THREE.PlaneGeometry(3.2, 6.4);
+    arrowGeo.rotateX(-Math.PI / 2);
+    const arrows = [];
+    const SPACING = 96;
+    for (let k = 0; k <= 128; k++) {
+      const h = S.horizontal(k), v = S.vertical(k);
+      const z = -WORLD_HALF + (k - CORE_I) * P;
+      const x = -WORLD_HALF + (k - CORE_I) * P;
+      if (h.oneWay) {
+        for (let a = -3200; a <= 3200; a += SPACING) {
+          if (h.oneWay > 0) arrows.push({ x: a, z: z + 3.4, rot: -Math.PI / 2 });
+          else arrows.push({ x: a, z: z - 3.4, rot: Math.PI / 2 });
+        }
+      }
+      if (v.oneWay) {
+        for (let a = -3200; a <= 3200; a += SPACING) {
+          if (v.oneWay > 0) arrows.push({ x: x - 3.4, z: a, rot: Math.PI });
+          else arrows.push({ x: x + 3.4, z: a, rot: 0 });
+        }
+      }
+    }
+    const arrowMesh = new THREE.InstancedMesh(arrowGeo, arrowMat, Math.min(arrows.length, 900));
+    let n = 0;
+    for (const a of arrows) {
+      if (n >= 900) break;
+      dummy.position.set(a.x, 0.16, a.z);
+      dummy.rotation.set(0, a.rot, 0);
+      dummy.scale.setScalar(1);
+      dummy.updateMatrix();
+      arrowMesh.setMatrixAt(n++, dummy.matrix);
+    }
+    arrowMesh.count = n;
+    arrowMesh.instanceMatrix.needsUpdate = true;
+    arrowMesh.frustumCulled = false;
+    group.add(arrowMesh);
+
+    // ---------- 2. terre-pleins des avenues / boulevards -------------------
+    const medianMat = new THREE.MeshStandardMaterial({ color: 0x6f7a63, roughness: 0.95 });
+    const medianGeo = new THREE.BoxGeometry(46, 0.16, 1.15);
+    const medians = [];
+    const NEAR = 1400;
+    for (let k = 0; k <= 128; k++) {
+      const coords = -WORLD_HALF + (k - CORE_I) * P;
+      if (Math.abs(coords) > NEAR) continue;
+      const h = S.horizontal(k), v = S.vertical(k);
+      for (let q = 0; q <= 128; q++) {
+        const c2 = -WORLD_HALF + (q - CORE_I) * P;
+        if (Math.abs(c2) > NEAR) continue;
+        // le terre-plein occupe l'intervalle ENTRE deux carrefours
+        if (h.klass === 'avenue' || h.klass === 'boulevard') medians.push({ x: c2 + P / 2, z: coords, rot: 0 });
+        if (v.klass === 'avenue' || v.klass === 'boulevard') medians.push({ x: coords, z: c2 + P / 2, rot: Math.PI / 2 });
+      }
+    }
+    const medianMesh = new THREE.InstancedMesh(medianGeo, medianMat, medians.length);
+    medians.forEach((m, i) => {
+      dummy.position.set(m.x, 0.09, m.z);
+      dummy.rotation.set(0, m.rot, 0);
+      dummy.scale.setScalar(1);
+      dummy.updateMatrix();
+      medianMesh.setMatrixAt(i, dummy.matrix);
+      this.addCollider(m.x, m.z, m.rot ? 1.15 : 46, m.rot ? 46 : 1.15, 0.2);
+    });
+    medianMesh.instanceMatrix.needsUpdate = true;
+    medianMesh.receiveShadow = true;
+    group.add(medianMesh);
+    this.medianCount = medians.length;
+
+    // arbres d'alignement sur les avenues (demandés avant finalizeTrees)
+    for (let k = 0; k <= 128; k++) {
+      const coords = -WORLD_HALF + (k - CORE_I) * P;
+      if (Math.abs(coords) > NEAR) continue;
+      const h = S.horizontal(k), v = S.vertical(k);
+      const onCrossing = (a) => {
+        const f = ((a + WORLD_HALF) % P + P) % P;
+        return f < 13 || f > P - 13;
+      };
+      if (h.klass === 'avenue') {
+        for (let a = -900; a <= 900; a += 34) {
+          if (onCrossing(a)) continue;
+          this.plantTree(a, coords, 0.85 + rng() * 0.35, false);
+        }
+      }
+      if (v.klass === 'avenue') {
+        for (let a = -900; a <= 900; a += 34) {
+          if (onCrossing(a)) continue;
+          this.plantTree(coords, a, 0.85 + rng() * 0.35, false);
+        }
+      }
+    }
+
+    // ---------- 3. mini-giratoires (peints, sans feu) ----------------------
+    const islandGeo = new THREE.CylinderGeometry(2.2, 2.4, 0.18, 20);
+    const islandMat = new THREE.MeshStandardMaterial({ color: 0x4d6b45, roughness: 0.95 });
+    const ringGeo = new THREE.RingGeometry(6.2, 6.8, 28);
+    ringGeo.rotateX(-Math.PI / 2);
+    const ringMat = new THREE.MeshBasicMaterial({ color: 0xe6e6de, transparent: true, opacity: 0.85, depthWrite: false });
+    const spots = [];
+    for (let i = 0; i <= 128; i += 18) {
+      for (let j = 0; j <= 128; j += 18) {
+        const x = -WORLD_HALF + (i - CORE_I) * P;
+        const z = -WORLD_HALF + (j - CORE_I) * P;
+        if (Math.abs(x) < 340 && Math.abs(z) < 340) continue;   // pas dans le cœur (feux)
+        if (Math.abs(x) > 2800 || Math.abs(z) > 2800) continue;
+        if (Math.abs(x - CANAL.x) < 60) continue;
+        spots.push({ x, z });
+      }
+    }
+    const islands = new THREE.InstancedMesh(islandGeo, islandMat, spots.length);
+    const rings = new THREE.InstancedMesh(ringGeo, ringMat, spots.length);
+    spots.forEach((sp, i) => {
+      dummy.position.set(sp.x, 0.16, sp.z); dummy.rotation.set(0, 0, 0); dummy.scale.setScalar(1);
+      dummy.updateMatrix(); islands.setMatrixAt(i, dummy.matrix);
+      dummy.position.y = 0.155; dummy.updateMatrix(); rings.setMatrixAt(i, dummy.matrix);
+      this.addCollider(sp.x, sp.z, 4.0, 4.0, 0.18);
+    });
+    islands.instanceMatrix.needsUpdate = true; rings.instanceMatrix.needsUpdate = true;
+    group.add(islands, rings);
+    this.roundabouts = spots;
+    this.roundaboutKeys = new Set(spots.map((sp) => `${Math.round((sp.x + WORLD_HALF) / P) + CORE_I},${Math.round((sp.z + WORLD_HALF) / P) + CORE_I}`));
+
+    // ---------- 4. rues piétonnes : bollards -------------------------------
+    const bollardGeo = new THREE.CylinderGeometry(0.16, 0.2, 1.0, 8);
+    const bollardMat = new THREE.MeshStandardMaterial({ color: 0x2f343b, metalness: 0.5, roughness: 0.5 });
+    const bol = [];
+    const pl = passageLines(S);
+    for (const k of pl.v) {
+      const x = -WORLD_HALF + (k - CORE_I) * P;
+      for (let z = -1500; z <= 1500; z += 64) {
+        for (const off of [-5.2, 5.2]) bol.push({ x: x + off, z });
+      }
+    }
+    for (const k of pl.h) {
+      const z = -WORLD_HALF + (k - CORE_I) * P;
+      for (let x = -1500; x <= 1500; x += 64) {
+        for (const off of [-5.2, 5.2]) bol.push({ x, z: z + off });
+      }
+    }
+    if (bol.length) {
+      const bm = new THREE.InstancedMesh(bollardGeo, bollardMat, bol.length);
+      bol.forEach((b, i) => {
+        dummy.position.set(b.x, 0.5, b.z); dummy.rotation.set(0, 0, 0); dummy.scale.setScalar(1);
+        dummy.updateMatrix(); bm.setMatrixAt(i, dummy.matrix);
+      });
+      bm.instanceMatrix.needsUpdate = true;
+      group.add(bm);
+    }
+    this.pedestrianStreets = { v: pl.v.map((k) => ({ k, x: -WORLD_HALF + (k - CORE_I) * P })), h: pl.h.map((k) => ({ k, z: -WORLD_HALF + (k - CORE_I) * P })) };
+
+    group.traverse((o) => { if (o.isMesh || o.isInstancedMesh) { o.matrixAutoUpdate = false; o.updateMatrix(); } });
+    this.scene.add(group);
+  }
+
+  // ============================== CANAL ====================================
+  /**
+   * Canal Nord-Sud + un pont par rue transversale.
+   *
+   * Pourquoi un canal : c'est le seul accident géographique qui casse
+   * réellement la lecture « grille parfaite » d'une métropole procédurale.
+   * Il donne un repère d'orientation (« je suis rive gauche ») et des points
+   * de passage obligés.
+   *
+   * L'eau est posée juste au-dessus du sol de la métropole (y = 0,012) afin
+   * de ne pas avoir à découper le plan de sol : les routes qui la traversent
+   * disparaissent visuellement sous l'eau, et les ponts les remplacent.
+   */
+  buildCanal() {
+    const group = new THREE.Group();
+    const LEN = 8600;
+    const waterMat = new THREE.MeshStandardMaterial({
+      color: 0x14384d, roughness: 0.09, metalness: 0.55,
+      envMapIntensity: 1.8, transparent: false,
+    });
+    const water = new THREE.Mesh(new THREE.PlaneGeometry(CANAL.w, LEN), waterMat);
+    water.rotation.x = -Math.PI / 2;
+    water.position.set(CANAL.x, 0.02, 0);
+    water.receiveShadow = false;
+    group.add(water);
+    this.waterMaterial = waterMat;
+
+    // quais (pierre) : segments entre les ponts
+    const quayMat = new THREE.MeshStandardMaterial({ color: 0x8c8f92, roughness: 0.85, metalness: 0.04 });
+    const quayGeo = new THREE.BoxGeometry(1.2, 0.55, P - 18);
+    const quays = [];
+    for (let k = 0; k <= 128; k++) {
+      const z = -WORLD_HALF + (k - CORE_I) * P;
+      // le quai occupe le milieu de l'intervalle entre deux ponts
+      for (const side of [-1, 1]) quays.push({ x: CANAL.x + side * CANAL.quay, z: z + P / 2 });
+    }
+    const quayMesh = new THREE.InstancedMesh(quayGeo, quayMat, quays.length);
+    const dummy = new THREE.Object3D();
+    quays.forEach((q, i) => {
+      dummy.position.set(q.x, 0.26, q.z); dummy.rotation.set(0, 0, 0); dummy.scale.setScalar(1);
+      dummy.updateMatrix(); quayMesh.setMatrixAt(i, dummy.matrix);
+      this.addCollider(q.x, q.z, 1.2, P - 18, 0.55);
+    });
+    quayMesh.instanceMatrix.needsUpdate = true;
+    quayMesh.castShadow = true; quayMesh.receiveShadow = true;
+    group.add(quayMesh);
+
+    // ponts : un par rue Est-Ouest
+    const deckMat = new THREE.MeshStandardMaterial({
+      map: this.asphaltTex?.map || null, color: 0x9aa0a8, roughness: 0.82, metalness: 0.06,
+    });
+    const deckGeo = new THREE.BoxGeometry(52, 0.16, 18);
+    const railMat = new THREE.MeshStandardMaterial({ color: 0x8e959c, metalness: 0.7, roughness: 0.45 });
+    const railGeo = new THREE.BoxGeometry(52, 0.8, 0.2);
+    const decks = [];
+    for (let k = 0; k <= 128; k++) decks.push(-WORLD_HALF + (k - CORE_I) * P);
+    const deckMesh = new THREE.InstancedMesh(deckGeo, deckMat, decks.length);
+    const railMesh = new THREE.InstancedMesh(railGeo, railMat, decks.length * 2);
+    let rn = 0;
+    decks.forEach((z, i) => {
+      dummy.position.set(CANAL.x, 0.10, z); dummy.rotation.set(0, 0, 0); dummy.scale.setScalar(1);
+      dummy.updateMatrix(); deckMesh.setMatrixAt(i, dummy.matrix);
+      for (const side of [-1, 1]) {
+        dummy.position.set(CANAL.x, 0.52, z + side * 8.9);
+        dummy.updateMatrix(); railMesh.setMatrixAt(rn++, dummy.matrix);
+        this.addCollider(CANAL.x, z + side * 8.9, 52, 0.4, 0.9);
+      }
+    });
+    deckMesh.instanceMatrix.needsUpdate = true;
+    railMesh.instanceMatrix.needsUpdate = true;
+    deckMesh.receiveShadow = true; railMesh.castShadow = true;
+    group.add(deckMesh, railMesh);
+    this.bridges = decks.map((z) => ({ x: CANAL.x, z }));
+    this.canal = { ...CANAL, length: LEN };
+    this.canalX = CANAL.x;
+    group.traverse((o) => { if (o.isMesh || o.isInstancedMesh) { o.updateMatrix(); } });
+    this.scene.add(group);
+  }
+
   /** Autoroute en anneau (2×2 km) + 4 avenues radiales + glissières + lampadaires. */
   buildHighways() {
     const group = new THREE.Group();
@@ -368,14 +688,33 @@ export class City {
     for (const [sx, sz, len, rot] of [[0, -RING, span, 0], [0, RING, span, 0], [-RING, 0, span, Math.PI / 2], [RING, 0, span, Math.PI / 2]]) {
       const road = new THREE.Mesh(new THREE.BoxGeometry(len, 0.12, RING_W), asphalt);
       road.position.set(sx, 0.03, sz); road.rotation.y = rot; group.add(road);
-      for (const side of [-1, 1]) {
-        const rail = new THREE.Mesh(new THREE.BoxGeometry(len, 0.85, 0.22), railMat);
-        rail.position.set(sx + Math.cos(rot) * side * (RING_W / 2 + 0.3), 0.5, sz - Math.sin(rot) * side * (RING_W / 2 + 0.3));
-        rail.rotation.y = rot; group.add(rail);
-      }
       const dash = new THREE.Mesh(new THREE.BoxGeometry(len, 0.02, 0.32), laneMat);
       dash.position.set(sx, 0.10, sz); dash.rotation.y = rot; group.add(dash);
     }
+    // Glissières SEGMENTÉES : une ouverture à chaque rue transversale, sinon
+    // l'anneau serait une autoroute clôturée sans entrée ni sortie.
+    const segLen = P - 18;
+    const rails = [];
+    for (const [sx, sz, rot] of [[0, -RING, 0], [0, RING, 0], [-RING, 0, 1], [RING, 0, 1]]) {
+      for (let a = -RING; a <= RING; a += P) {
+        const c = a + P / 2;
+        if (Math.abs(c) > RING - 8) continue;
+        for (const side of [-1, 1]) {
+          if (rot === 0) rails.push({ x: c, z: sz + side * (RING_W / 2 + 0.3), rot: 0 });
+          else rails.push({ x: sx + side * (RING_W / 2 + 0.3), z: c, rot: Math.PI / 2 });
+        }
+      }
+    }
+    const railGeo = new THREE.BoxGeometry(segLen, 0.85, 0.22);
+    const railMesh = new THREE.InstancedMesh(railGeo, railMat, rails.length);
+    const rd = new THREE.Object3D();
+    rails.forEach((r, i) => {
+      rd.position.set(r.x, 0.5, r.z); rd.rotation.set(0, r.rot, 0);
+      rd.updateMatrix(); railMesh.setMatrixAt(i, rd.matrix);
+    });
+    railMesh.instanceMatrix.needsUpdate = true;
+    railMesh.castShadow = true;
+    group.add(railMesh);
     // avenues radiales (du cœur vers l'anneau)
     for (const [ax, az, rot] of [[0, 1, 0], [0, -1, 0], [1, 0, Math.PI / 2], [-1, 0, Math.PI / 2]]) {
       const len = RING - WORLD_HALF;
@@ -448,17 +787,36 @@ export class City {
         if (Math.abs(cx) < RADIAL_W / 2 + 10 || Math.abs(cz) < RADIAL_W / 2 + 10) continue;
         if (Math.abs(Math.abs(cx) - RING) < RING_W / 2 + 12 || Math.abs(Math.abs(cz) - RING) < RING_W / 2 + 12) continue;
         if (Math.hypot(cx - CIRCUIT.x, cz - CIRCUIT.z) < CIRCUIT.r + 40) continue;
+        if (Math.abs(cx - CANAL.x) < CANAL.half + 14) continue;   // canal + quais
+        // ------------------------------------------------------------------
+        // ASYMÉTRIE : chaque bloc tire son propre profil à partir d'un hachage
+        // de ses coordonnées. Pas de tirage global : deux blocs voisins ne se
+        // ressemblent plus, et l'ordre de génération ne change rien.
+        // ------------------------------------------------------------------
+        const h = hash2(bi, bj, 1337);
+        const roll = (h % 1000) / 1000;
+        // 6 % de terrains vagues, puis 1 à 4 bâtiments selon le tirage
+        let count = roll < 0.06 ? 0 : roll < 0.30 ? 1 : roll < 0.62 ? 2 : roll < 0.88 ? 3 : 4;
+
+        // densité : pôles secondaires (affaires au nord, industries au canal)
+        const poleA = Math.exp(-(((cx - 1400) ** 2) + ((cz + 900) ** 2)) / (2 * 900 * 900));
+        const poleB = Math.exp(-(((cx - CANAL.x) ** 2) + ((cz - 600) ** 2)) / (2 * 700 * 700));
         const dist = Math.hypot(cx, cz);
-        const maxH = dist < 1200 ? 36 : dist < 2400 ? 24 : dist < 3400 ? 15 : 10;
-        const count = 2 + (rand() < 0.5 ? 1 : 0);
+        let maxH = dist < 1200 ? 36 : dist < 2400 ? 24 : dist < 3400 ? 15 : 10;
+        maxH *= 1 + poleA * 1.6;                       // quartier d'affaires
+        if (poleB > 0.55 && roll < 0.5) count = Math.min(count, 2);   // zone portuaire basse
+
         const slots = [[-0.26, 0, 0.46, 0.9], [0.26, 0, 0.46, 0.9], [-0.26, 0.27, 0.44, 0.42], [0.26, 0.27, 0.44, 0.42]];
+        // l'emplacement change aussi : parfois un seul gros volume au centre
+        const solo = count === 1 && (h >>> 5) % 2 === 0;
         for (let k = 0; k < count; k++) {
-          const [ox, oz, fw, fd] = slots[k];
-          const w = BZ * fw * randRange(0.8, 1), d = BZ * fd * randRange(0.8, 1);
-          const h = randRange(maxH * 0.35, maxH);
+          const [ox, oz, fw, fd] = solo ? [0, 0, 0.92, 0.92] : slots[k];
+          const w = BZ * fw * randRange(0.72, 1), d = BZ * fd * randRange(0.72, 1);
+          const tall = (h >>> (k * 3)) % 100 < 18;      // 18 % de tours isolées
+          let hh = tall ? randRange(maxH * 0.8, maxH * 1.25) : randRange(maxH * 0.28, maxH * 0.8);
           const x = cx + ox * BZ, z = cz + oz * BZ;
-          items.push({ x, z, w, d, h, pal: palettes[Math.floor(rand() * palettes.length)] });
-          this.addColliderLive(x, z, w, d, h);
+          items.push({ x, z, w, d, h: hh, pal: palettes[(h >>> (k * 2 + 3)) % palettes.length] });
+          this.addColliderLive(x, z, w, d, hh);
         }
       }
     }
@@ -704,7 +1062,7 @@ export class City {
       this.plantTree(x, z, randRange(0.8, 1.3));
     }
   }
-  plantTree(x, z, scale) { (this._trees ??= []).push({ x, z, scale }); }
+  plantTree(x, z, scale, collide = true) { (this._trees ??= []).push({ x, z, scale, collide }); }
   finalizeTrees() {
     const trees = this._trees || [];
     const trunkGeo = new THREE.CylinderGeometry(0.16, 0.24, 2.2, 6);
@@ -719,7 +1077,7 @@ export class City {
       trunks.setMatrixAt(i, dummy.matrix);
       dummy.position.y = (2.2 + 1.4) * t.scale + 0.15; dummy.updateMatrix();
       leaves.setMatrixAt(i, dummy.matrix);
-      this.addCollider(t.x, t.z, 0.7, 0.7);
+      if (t.collide !== false) this.addCollider(t.x, t.z, 0.7, 0.7);
     });
     this.scene.add(trunks, leaves);
     this._trees = [];
@@ -854,13 +1212,60 @@ export class City {
     }
   }
   nodeAt(i, j) { return (i >= 0 && i <= MN && j >= 0 && j <= MN) ? this.nodes[i][j] : null; }
+
+  // --------------------------- Réseau viaire nommé -------------------------
+  /**
+   * Grille des rues : noms, classes et sens uniques. Construite après le
+   * graphe routier car elle ne dépend que des indices de lignes.
+   */
+  buildStreetGrid() {
+    this.streets = new StreetGrid(MN, WORLD_HALF, P);
+  }
+
+  /** Nom de rue le plus proche (HUD, missions, dialogues). */
+  streetAt(x, z) { return this.streets ? this.streets.crossAt(x, z) : null; }
+
+  /**
+   * Peut-on circuler depuis ce nœud dans cette direction ?
+   * @param {object} node nœud du graphe
+   * @param {number} dirIdx 0=E, 1=O, 2=S, 3=N
+   * @returns {boolean}
+   */
+  canDrive(node, dirIdx) {
+    if (!node || !this.streets) return true;
+    // le lit du canal a remplacé la rue : on ne roule pas sur l'eau
+    if ((dirIdx === 2 || dirIdx === 3) && Math.abs(node.x - CANAL.x) < 1) return false;
+    // d = 0 (+x) / 1 (-x) : on emprunte la voie Est-Ouest d'indice j
+    if (dirIdx === 0 || dirIdx === 1) {
+      const st = this.streets.horizontal(node.j);
+      if (st.klass === 'passage') return false;
+      if (st.oneWay === 0) return true;
+      return dirIdx === 0 ? st.oneWay > 0 : st.oneWay < 0;
+    }
+    const st = this.streets.vertical(node.i);
+    if (st.klass === 'passage') return false;
+    if (st.oneWay === 0) return true;
+    return dirIdx === 2 ? st.oneWay > 0 : st.oneWay < 0;
+  }
+
+  /** Renseigne la classe de la voie empruntée par un déplacement. */
+  streetClassAt(x, z) {
+    if (!this.streets) return 'rue';
+    return this.streets.nearest(x, z).street.klass;
+  }
+
   nextNode(node, dirIdx) {
     const d = DIRS[dirIdx];
     return this.nodeAt(node.i + d.x, node.j + d.z);
   }
   lanePoint(node, dirIdx, out) {
     const r = rightOf(DIRS[dirIdx]);
-    out.set(node.x + r.x * laneOffset, 0, node.z + r.z * laneOffset);
+    // Sur un giratoire, la voie passe à 7 m du centre : la corde entre deux
+    // points de ce cercle ne s'approche jamais à moins de ~4,9 m, donc les
+    // voitures ne coupent pas l'îlot central.
+    const isRb = this.roundaboutKeys?.has(`${node.i},${node.j}`);
+    const off = isRb ? 7 : laneOffset;
+    out.set(node.x + r.x * off, 0, node.z + r.z * off);
     return out;
   }
   randomNode() {
