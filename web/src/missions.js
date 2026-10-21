@@ -16,6 +16,10 @@ export class MissionSystem {
     this.reward = 0; this.timeLeft = 0; this.timeTotal = 0;
     this.deliveries = 0;
     this._nextT = 1.2;
+    // Mode Histoire : missions enchaînées. Mode Libre : aucune mission imposée
+    // (le joueur peut toujours explorer, la boutique et le garage restent actifs).
+    this.enabled = true;
+    this.freeRoam = null;      // en mode libre : destination choisie librement
 
     // marqueur monde : colonne de lumière + anneau + colis flottant
     this.marker = new THREE.Group();
@@ -70,7 +74,27 @@ export class MissionSystem {
     Bus.emit('missionUpdate', {});
   }
 
+  /** Mode Libre : le joueur pose un marqueur libre, sans chrono ni récompense. */
+  setFreeTarget(x, z) {
+    this.freeRoam = { x, z };
+    this.target.set(x, 0, z);
+    this.marker.position.set(x, 0, z);
+    this.beamMat.color.setHex(0x5ee1ff);
+    this.ringMat.color.setHex(0x5ee1ff);
+    this.marker.visible = true;
+  }
+
+  clearFreeTarget() { this.freeRoam = null; this.marker.visible = false; }
+
   objectiveInfo(ctx) {
+    if (!this.enabled) {
+      if (!this.freeRoam) return null;
+      const pp0 = ctx.playerPos();
+      return {
+        title: '🗺️ Destination libre', dist: Math.hypot(this.freeRoam.x - pp0.x, this.freeRoam.z - pp0.z),
+        timeLeft: null, urgent: false, pos: this.target, phase: 'free',
+      };
+    }
     if (this.phase === 'none') return null;
     const pp = ctx.playerPos();
     const dist = Math.hypot(this.target.x - pp.x, this.target.z - pp.z);
@@ -83,6 +107,15 @@ export class MissionSystem {
   }
 
   update(dt, ctx) {
+    if (!this.enabled) {
+      // mode libre : la balise libre pulse, aucune contrainte de temps
+      if (this.freeRoam) {
+        this._t = (this._t || 0) + dt;
+        this.beamMat.opacity = 0.13 + Math.sin(this._t * 3) * 0.045;
+        this.box.visible = false;
+      }
+      return;
+    }
     if (this.phase === 'none') {
       this._nextT -= dt;
       if (this._nextT <= 0) this.newDelivery(ctx);

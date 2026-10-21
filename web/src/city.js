@@ -46,6 +46,7 @@ const windowMaterials = [];   // matériaux dont l'émissif est piloté jour/nui
  *                          la seed. 2 variantes suffisent (budget mémoire).
  */
 const facadeMatCache = new Map();
+const CHUNK_MATERIALS = new Map();
 let roofMatShared = null;
 /** Matériau de toiture partagé par tous les bâtiments (1 seul programme). */
 function getRoofMaterial() {
@@ -165,6 +166,84 @@ function setTextureRepeat(material, repeat) {
   };
   material.needsUpdate = true;
   return material;
+}
+
+
+/**
+ * Façade triplanaire pour les bâtiments INSTANCIÉS des chunks lointains.
+ *
+ * Problème corrigé : les chunks de la métropole étaient rendus en
+ * `MeshStandardMaterial({ color: 0xffffff })` — de simples boîtes blanches.
+ * En s'éloignant du spawn, le joueur ne voyait donc plus aucune façade, ce qui
+ * se lit comme « les textures ne se chargent pas ».
+ *
+ * Pourquoi un mapping triplanaire : un InstancedMesh ne peut pas porter des UV
+ * différentes par instance. On projette donc la texture depuis la position
+ * MONDE, en choisissant le plan (XY / ZY / XZ) selon la normale. Les fenêtres
+ * gardent ainsi exactement la même échelle sur tous les bâtiments, quelle que
+ * soit leur taille — ce qui est aussi le comportement correct.
+ *
+ * Coût : quelques instructions par fragment, une seule texture par matériau.
+ */
+function makeFacadeInstancedMaterial(palette, band, opts = {}) {
+  const { day, bump } = facadeHD(palette, band, opts.variant || 0);
+  const mat = new THREE.MeshStandardMaterial({
+    map: day,
+    bumpMap: bump,
+    bumpScale: 0.12,
+    roughness: 0.85,
+    metalness: 0.04,
+    envMapIntensity: 0.55,
+  });
+  // Échelle : une tuile de façade ≈ 16 m de large et R étages de ~3 m
+  const TILE_W = opts.tileMeters || 16;
+  const TILE_H = opts.tileHeight || 19.2;
+  mat.onBeforeCompile = (shader) => {
+    shader.uniforms.uTileW = { value: TILE_W };
+    shader.uniforms.uTileH = { value: TILE_H };
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', `#include <common>
+        varying vec3 vTriPos;
+        varying vec3 vTriNormal;`)
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+        {
+          // position MONDE de l'instance (instancing supporté)
+          #ifdef USE_INSTANCING
+            vec4 wp = modelMatrix * instanceMatrix * vec4(position, 1.0);
+            vec3 wn = normalize(mat3(modelMatrix) * mat3(instanceMatrix) * normal);
+          #else
+            vec4 wp = modelMatrix * vec4(position, 1.0);
+            vec3 wn = normalize(mat3(modelMatrix) * normal);
+          #endif
+          vTriPos = wp.xyz;
+          vTriNormal = wn;
+        }`);
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `#include <common>
+        uniform float uTileW;
+        uniform float uTileH;
+        varying vec3 vTriPos;
+        varying vec3 vTriNormal;
+        // projection triplanaire simple (une seule texture)
+        vec2 triplanarUV(vec3 p, vec3 n) {
+          vec3 an = abs(n);
+          if (an.y >= an.x && an.y >= an.z) return vec2(p.x, p.z);
+          if (an.x >= an.z) return vec2(p.z, p.y);
+          return vec2(p.x, p.y);
+        }`)
+      .replace('#include <map_fragment>', `#include <map_fragment>
+        {
+          vec2 tuv = triplanarUV(vTriPos, vTriNormal);
+          tuv = vec2(tuv.x / uTileW, tuv.y / uTileH);
+          vec4 texel = texture2D(map, tuv);
+          // les toits (normale verticale) restent sombres : pas de fenêtres
+          float isRoof = smoothstep(0.55, 0.85, abs(vTriNormal.y));
+          vec3 wallCol = texel.rgb;
+          diffuseColor.rgb = mix(wallCol, vec3(0.24, 0.255, 0.275), isRoof);
+        }`);
+  };
+  mat.customProgramCacheKey = () => `facadeTri:${palette}:${band}:${opts.variant || 0}`;
+  return mat;
 }
 
 // ================================ CITY ======================================
@@ -358,7 +437,8 @@ export class City {
   /** Génère (une fois) le contenu d'un chunk de métropole, sans le cœur détaillé. */
   genChunk(ci, cj) {
     const items = [];
-    const palettes = [0x8d99a6, 0xa8917c, 0x7d8a94, 0x9aa3ad, 0x85796d, 0xb0b6bd];
+    // palettes de façade nommées (textures réelles, plus de boîtes blanches)
+    const palettes = ['office', 'plaster', 'brick', 'shop', 'oldbrick', 'warehouse'];
     for (let bi = ci * CHUNK; bi < (ci + 1) * CHUNK; bi++) {
       for (let bj = cj * CHUNK; bj < (cj + 1) * CHUNK; bj++) {
         if (bi < 0 || bj < 0 || bi >= MN || bj >= MN) continue;
@@ -377,25 +457,40 @@ export class City {
           const w = BZ * fw * randRange(0.8, 1), d = BZ * fd * randRange(0.8, 1);
           const h = randRange(maxH * 0.35, maxH);
           const x = cx + ox * BZ, z = cz + oz * BZ;
-          items.push({ x, z, w, d, h, color: palettes[Math.floor(rand() * palettes.length)] });
+          items.push({ x, z, w, d, h, pal: palettes[Math.floor(rand() * palettes.length)] });
           this.addColliderLive(x, z, w, d, h);
         }
       }
     }
     if (!items.length) return null;
+    // --- un InstancedMesh PAR PALETTE, avec la vraie texture de façade -----
     const geo = new THREE.BoxGeometry(1, 1, 1);
-    const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85, metalness: 0.05 });
-    const mesh = new THREE.InstancedMesh(geo, mat, items.length);
+    const groups = new Map();
+    for (const it of items) {
+      if (!groups.has(it.pal)) groups.set(it.pal, []);
+      groups.get(it.pal).push(it);
+    }
+    const out = new THREE.Group();
     const d = new THREE.Object3D(); const col = new THREE.Color();
-    items.forEach((it, i) => {
-      d.position.set(it.x, it.h / 2, it.z); d.scale.set(it.w, it.h, it.d); d.rotation.set(0, 0, 0);
-      d.updateMatrix(); mesh.setMatrixAt(i, d.matrix);
-      mesh.setColorAt(i, col.setHex(it.color));
-    });
-    mesh.instanceMatrix.needsUpdate = true; if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-    mesh.castShadow = false; mesh.receiveShadow = false;
-    this.scene.add(mesh);
-    return mesh;
+    for (const [pal, list] of groups) {
+      const mat = CHUNK_MATERIALS.get(pal) || (() => {
+        const m = makeFacadeInstancedMaterial(pal, 'mid', { variant: pal.length % 2 });
+        CHUNK_MATERIALS.set(pal, m);
+        return m;
+      })();
+      const mesh = new THREE.InstancedMesh(geo, mat, list.length);
+      list.forEach((it, i) => {
+        d.position.set(it.x, it.h / 2, it.z); d.scale.set(it.w, it.h, it.d); d.rotation.set(0, 0, 0);
+        d.updateMatrix(); mesh.setMatrixAt(i, d.matrix);
+      });
+      mesh.instanceMatrix.needsUpdate = true;
+      // ombres : inutiles pour la silhouette lointaine, coût GPU évité
+      mesh.castShadow = false; mesh.receiveShadow = false;
+      mesh.frustumCulled = true;
+      out.add(mesh);
+    }
+    this.scene.add(out);
+    return out;
   }
 
   /** Ajoute un collider APRÈS l'indexation initiale (chunks streamés). */

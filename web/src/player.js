@@ -68,6 +68,8 @@ export class Player {
     // --- v0.3 : manette, caméra automatique, santé ---
     this.gamepad = new GamepadInput();
     this.autoCam = true;                 // la caméra suit la direction (touche C)
+    this.camMode = 'third';              // 'third' | 'first'  (touche V / BACK)
+    this._fpBlend = 0;                   // 0 = 3e personne, 1 = 1re personne
     this.health = ECONOMY.health.max;
     this.maxHealth = ECONOMY.health.max;
     this._hurtT = 0;
@@ -81,6 +83,7 @@ export class Player {
       if (e.code === 'KeyF' && !e.repeat) this._wantInteract = true;
       if (e.code === 'KeyH' && this.vehicle) this._wantHonk = true;
       if (e.code === 'KeyC' && !e.repeat) this.autoCam = !this.autoCam;
+      if (e.code === 'KeyV' && !e.repeat) this.cycleCamera();
     });
     window.addEventListener('keyup', (e) => this.keys.delete(e.code));
     window.addEventListener('blur', () => this.keys.clear());
@@ -89,8 +92,9 @@ export class Player {
     window.addEventListener('pointerup', () => { dragging = false; });
     window.addEventListener('pointermove', (e) => {
       if (!dragging) return;
-      this.camYaw -= (e.clientX - lx) * 0.0052;
-      this.camPitch = clamp(this.camPitch + (e.clientY - ly) * 0.004, -0.15, 1.15);
+      const sens = this.mouseSens ?? 1;
+      this.camYaw -= (e.clientX - lx) * 0.0052 * sens;
+      this.camPitch = clamp(this.camPitch + (e.clientY - ly) * 0.004 * sens * (this.invertY ? -1 : 1), -0.15, 1.15);
       lx = e.clientX; ly = e.clientY;
       this._camFreeT = 2.2;              // la caméra véhicule se recentre après 2,2 s
     });
@@ -99,6 +103,32 @@ export class Player {
     }, { passive: true });
   }
   key(...codes) { return codes.some((c) => this.keys.has(c)); }
+
+  /**
+   * Bascule 3e personne ↔ 1re personne (habitacle).
+   * Appelé par la touche V, le bouton BACK de la manette et le menu Contrôles.
+   */
+  cycleCamera() {
+    this.camMode = this.camMode === 'third' ? 'first' : 'third';
+    this._camFreeT = 0;
+    Bus.emit('toast', {
+      text: this.camMode === 'first' ? '🎥 Vue habitacle (V pour changer)' : '🎥 Vue 3e personne',
+      kind: '',
+    });
+    return this.camMode;
+  }
+
+  /** Recentrage caméra (bouton R3 / touche R) : derrière le véhicule. */
+  recenterCamera() {
+    if (this.vehicle) {
+      this.camYaw = this.vehicle.heading + Math.PI;
+      this.camPitch = 0.3;
+    } else {
+      this.camYaw = this.heading + Math.PI;
+      this.camPitch = 0.28;
+    }
+    this._camFreeT = 0;
+  }
 
   getPos() { return this.vehicle ? this.vehicle.pos : this.pos; }
   getSpeed() { return this.vehicle ? Math.abs(this.vehicle.vf) : Math.hypot(this.vel.x, this.vel.z); }
@@ -149,10 +179,19 @@ export class Player {
     if (pad.connected) {
       if (pad.pressed('X')) this._wantInteract = true;
       if (pad.pressed('Y') && this.vehicle) this._wantHonk = true;
-      if (pad.pressed('START')) ctx.ui?.toggleDebug?.();
+      // START est traité par MenuSystem.update (le joueur est figé en pause)
+      if (pad.pressed('R3')) this.recenterCamera();
+      if (pad.pressed('BACK')) this.cycleCamera();
+      // L3 = verrou de sprint (appuyer une fois court, appuyer à nouveau
+      // arrête). Sur un clic de stick, le maintien est trop pénible.
+      if (pad.pressed('L3')) {
+        this._l3Latch = !this._l3Latch;
+        Bus.emit('toast', { text: this._l3Latch ? '🏃 Sprint activé (L3)' : '🚶 Sprint désactivé', kind: '' });
+      }
       if (Math.abs(pad.lookX) > 0 || Math.abs(pad.lookY) > 0) {
-        this.camYaw -= pad.lookX * 2.6 * dt;
-        this.camPitch = clamp(this.camPitch - pad.lookY * 1.7 * dt, -0.15, 1.15);
+        const ps = this.padSens ?? 1;
+        this.camYaw -= pad.lookX * 2.6 * dt * ps;
+        this.camPitch = clamp(this.camPitch - pad.lookY * 1.7 * dt * ps * (this.invertY ? -1 : 1), -0.15, 1.15);
         this._camFreeT = 2.2;
       }
     }
@@ -182,7 +221,9 @@ export class Player {
         fwd = this.gamepad.moveY; strafe = this.gamepad.moveX;
       }
     }
-    const sprint = this.key('ShiftLeft', 'ShiftRight') || this.gamepad.down('RB');
+    // Sprint : Maj clavier, ou L3 (clic du stick gauche) — plus RB (v0.4).
+    // Le latch permet de relâcher le stick sans perdre la course.
+    const sprint = this.key('ShiftLeft', 'ShiftRight') || this._l3Latch;
     const speed = sprint ? 6.6 : 3.3;
     // directions relatives à la caméra
     const sin = Math.sin(this.camYaw), cos = Math.cos(this.camYaw);
@@ -281,11 +322,57 @@ export class Player {
     }
     const target = new THREE.Vector3();
     let dist = this.camDist, height = 1.7, fov = 62;
+
+    // ------------------------------------------------------------------
+    // 1re PERSONNE EN VOITURE (v0.4)
+    // Le point de vue est placé à la position réelle du conducteur dans
+    // l'habitacle (à gauche du volant), pas au centre du toit : on voit donc
+    // le capot, les montants et les rétroviseurs. Le corps du joueur est déjà
+    // masqué (group.visible=false) ; on masque en plus la carrosserie autour
+    // de la caméra en rapprochant le plan near.
+    // ------------------------------------------------------------------
+    const wantFP = this.camMode === 'first' && !!this.vehicle;
+    this._fpBlend = damp(this._fpBlend, wantFP ? 1 : 0, 9, dt);
+    const fp = this._fpBlend;
+
     if (this.vehicle) {
       const v = this.vehicle;
       target.copy(v.pos); target.y += 1.6;
       dist = clamp(6.4 + Math.abs(v.vf) * 0.13, 6.4, 12);
       fov = 62 + clamp(Math.abs(v.vf) / v.spec.topSpeed, 0, 1) * 13;
+      if (fp > 0.001) {
+        // Repère du véhicule : avant = (sin h, cos h), droite = (cos h, -sin h).
+        // Conduite à gauche : l'œil est décalé de 22 % de la largeur à gauche.
+        const h = v.heading;
+        const fx = Math.sin(h), fz = Math.cos(h);
+        const rx = Math.cos(h), rz = -Math.sin(h);
+        const eyeX = v.pos.x - rx * v.spec.wid * 0.22;
+        const eyeZ = v.pos.z - rz * v.spec.wid * 0.22;
+        // hauteur d'œil : proportionnelle au gabarit du véhicule
+        const specH = v.spec.height || (v.spec.bodyH ? v.spec.bodyH + (v.spec.cabinH || 0) : 1.46);
+        const eyeY = 1.02 + specH * 0.42;
+        this.camera.position.set(eyeX, eyeY, eyeZ);
+        // le regard tourne avec la caméra libre (souris / stick droit) ;
+        // vue par défaut = vers l'avant du véhicule
+        const viewX = -Math.sin(this.camYaw), viewZ = -Math.cos(this.camYaw);
+        const pitchA = -this.camPitch + 0.30;
+        this.camera.lookAt(
+          eyeX + viewX * Math.cos(pitchA) * 10,
+          eyeY + Math.sin(pitchA) * 10,
+          eyeZ + viewZ * Math.cos(pitchA) * 10);
+        this.camera.rotateZ(-this.steerVisual * 0.035 - (v.driftAmount || 0) * 0.05);
+        this.camera.fov = 74 + clamp(Math.abs(v.vf) / v.spec.topSpeed, 0, 1) * 8;
+        this.camera.updateProjectionMatrix();
+        this._camPos.copy(this.camera.position);
+        // tête du conducteur masquée : on est dedans
+        if (v.driverFig) v.driverFig.visible = false;
+        if (this.shake > 0.003) {
+          this.camera.position.x += (Math.random() - 0.5) * this.shake * 0.5;
+          this.camera.position.y += (Math.random() - 0.5) * this.shake * 0.4;
+          this.shake = damp(this.shake, 0, 7, dt);
+        }
+        return;
+      }
     } else {
       target.copy(this.pos); target.y += height;
     }
@@ -300,6 +387,7 @@ export class Player {
       d -= 1.2;
       desired.set(target.x + Math.sin(this.camYaw) * cp * d, target.y + sp * d, target.z + Math.cos(this.camYaw) * cp * d);
     }
+    if (this.vehicle?.driverFig) this.vehicle.driverFig.visible = true;
     const lambda = this.vehicle ? 7 : 11;
     this._camPos.x = damp(this._camPos.x, desired.x, lambda, dt);
     this._camPos.y = damp(this._camPos.y, Math.max(desired.y, 0.7), lambda, dt);

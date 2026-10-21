@@ -10,6 +10,11 @@ import { DIRS } from './city.js';
 import Assets from './assets.js';
 
 const V3 = () => new THREE.Vector3();
+// Multiplicateur global de reflets (mode RTX / qualité lumière). Les véhicules
+// apparaissent en continu : sans ce levier, ceux créés après le réglage
+// garderaient l'ancienne valeur — incohérence visible entre deux voitures.
+let MAT_BOOST = 1;
+export function setVehicleMaterialBoost(v) { MAT_BOOST = Math.max(0.2, v || 1); }
 // Matériau partagé : halo de phares au sol (piloté globalement jour/nuit)
 export const headlightGlowMat = new THREE.MeshBasicMaterial({
   color: 0xffe9b0, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false });
@@ -18,12 +23,95 @@ const glassMat = new THREE.MeshStandardMaterial({ color: 0x16202c, roughness: 0.
 const tireMat = new THREE.MeshStandardMaterial({ color: 0x14161a, roughness: 0.95 });
 const hubMat = new THREE.MeshStandardMaterial({ color: 0xb9c0c9, roughness: 0.35, metalness: 0.7 });
 
+
+// ---------------------------------------------------------------------------
+//                       CONDUCTEUR VISIBLE DANS L'HABITACLE
+// ---------------------------------------------------------------------------
+/**
+ * Un conducteur assis, cloné depuis la bibliothèque de personnages CC0.
+ * On ne cherche pas une pose parfaite (aucun rig de conduite fourni) : une
+ * silhouette assise, mains vers le volant, tête au niveau du pavillon, suffit
+ * à ce que l'habitacle ne soit plus vide — exigence explicite du joueur.
+ *
+ * Le clone est décoré d'une ceinture sombre pour lire « conducteur attaché »
+ * et se distingue du piéton par sa pose figée (aucun cycle de marche).
+ */
+function buildDriverFigure() {
+  // Choix assumé : silhouette PROCÉDURALE fusionnée en une seule géométrie.
+  // Un personnage riggé par véhicule coûterait un squelette + plusieurs draw
+  // calls × ~25 véhicules ; ici c'est 1 draw call par voiture, posé une fois.
+  // À travers des vitres teintées, la lecture « quelqu'un conduit » est
+  // immédiate — c'est exactement l'exigence.
+  const parts = [];
+  const add = (geo, color, x, y, z, rx = 0, rz = 0) => {
+    const g2 = geo.clone();
+    g2.rotateX(rx); g2.rotateZ(rz); g2.translate(x, y, z);
+    const n = g2.attributes.position.count;
+    const col = new Float32Array(n * 3);
+    const c = new THREE.Color(color);
+    for (let i = 0; i < n; i++) { col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b; }
+    g2.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    for (const k of Object.keys(g2.attributes)) if (!['position', 'normal', 'color'].includes(k)) g2.deleteAttribute(k);
+    parts.push(g2);
+  };
+  const SKIN = 0xd9a882, SHIRT = 0x33404f, PANTS = 0x24272e, HAIR = 0x2a2118;
+  // buste + épaules
+  add(new THREE.BoxGeometry(0.40, 0.50, 0.24), SHIRT, 0, 0.25, 0);
+  add(new THREE.CapsuleGeometry(0.10, 0.20, 3, 6), SKIN, 0, 0.60, 0.02);        // cou + tête
+  add(new THREE.SphereGeometry(0.105, 8, 6), SKIN, 0, 0.66, 0.02);
+  add(new THREE.SphereGeometry(0.108, 8, 5), HAIR, 0, 0.70, 0.00);              // cheveux
+  // bras tendus vers le volant
+  for (const sx of [-1, 1]) {
+    add(new THREE.CylinderGeometry(0.043, 0.05, 0.34, 6), SKIN, sx * 0.19, 0.33, 0.17, 1.15, 0);
+    add(new THREE.SphereGeometry(0.045, 6, 5), SKIN, sx * 0.16, 0.34, 0.33);    // mains
+  }
+  // jambes repliées
+  for (const sx of [-1, 1]) {
+    add(new THREE.CylinderGeometry(0.062, 0.07, 0.30, 6), PANTS, sx * 0.11, 0.09, 0.13, 1.35, 0);
+    add(new THREE.CylinderGeometry(0.055, 0.05, 0.30, 6), PANTS, sx * 0.11, -0.08, 0.30, 0.15, 0);
+  }
+  // fusion manuelle (pas de dépendance à BufferGeometryUtils)
+  let total = 0, totalIdx = 0;
+  for (const g2 of parts) { total += g2.attributes.position.count; totalIdx += g2.index ? g2.index.count : g2.attributes.position.count; }
+  const pos = new Float32Array(total * 3), nor = new Float32Array(total * 3), colA = new Float32Array(total * 3);
+  const index = new Uint32Array(totalIdx);
+  let vo = 0, io = 0;
+  for (const g2 of parts) {
+    const p2 = g2.attributes.position, n2 = g2.attributes.normal, c2 = g2.attributes.color;
+    pos.set(p2.array, vo * 3); nor.set(n2.array, vo * 3); colA.set(c2.array, vo * 3);
+    const src = g2.index ? g2.index.array : null;
+    const cnt = src ? src.length : p2.count;
+    for (let i = 0; i < cnt; i++) index[io + i] = (src ? src[i] : i) + vo;
+    vo += p2.count; io += cnt;
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(colA, 3));
+  geo.setIndex(new THREE.BufferAttribute(index, 1));
+  const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.78, metalness: 0.05 });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.name = 'seated_driver';
+  mesh.castShadow = false;   // inutile à l'intérieur de l'habitacle
+  return mesh;
+}
+
 // ------------------------- Construction du mesh ----------------------------
 function buildVehicleMesh(typeName) {
   const t = VEHICLE_TYPES[typeName];
   const color = pick(t.colors);
   const g = new THREE.Group();
-  const paint = new THREE.MeshStandardMaterial({ color, roughness: 0.32, metalness: 0.55 });
+  // Peinture automobile : clair métallisé + vernis (clearcoat). C'est ce qui
+  // distingue une carrosserie « Forza » d'un simple plastique coloré : deux
+  // lobes de reflet (base + vernis) au lieu d'un seul.
+  const paint = new THREE.MeshPhysicalMaterial({
+    color,
+    roughness: 0.30,
+    metalness: 0.62,
+    clearcoat: 1.0,
+    clearcoatRoughness: 0.08,
+    envMapIntensity: 1.25 * MAT_BOOST,
+  });
 
   // Modèle 3D (Kenney, CC0) si la bibliothèque est chargée ; sinon les
   // primitives ci-dessous prennent le relais — le jeu ne casse jamais.
@@ -99,6 +187,32 @@ function buildVehicleMesh(typeName) {
     }
   }
 
+  // --- conducteur assis (le trafic n'est plus vide) ---
+  let driverFig = null;
+  if (!t.moto) {
+    driverFig = buildDriverFigure();
+    if (driverFig) {
+      // Repère véhicule : +Z = avant. En conduite à gauche, le conducteur
+      // est décalé à gauche de l'axe (x < 0 quand on regarde vers +Z).
+      const seatY = bodyY - t.bodyH * 0.30;
+      const seatZ = t.van ? t.len * 0.26 : -t.len * 0.02;
+      driverFig.position.set(-t.wid * 0.22, seatY, seatZ);
+      driverFig.rotation.y = 0;                    // déjà orienté vers l'avant
+      driverFig.scale.setScalar(0.92);
+      g.add(driverFig);
+    } else {
+      // Repli : silhouette simple (toujours mieux qu'un habitacle vide)
+      const skin = new THREE.MeshStandardMaterial({ color: 0xd7a37a, roughness: 0.8 });
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.115, 10, 8), skin);
+      const torso = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.42, 0.22),
+        new THREE.MeshStandardMaterial({ color: 0x2b3440, roughness: 0.85 }));
+      head.position.set(-t.wid * 0.24, bodyY + 0.30, -t.len * 0.05);
+      torso.position.set(-t.wid * 0.24, bodyY + 0.02, -t.len * 0.05);
+      g.add(head, torso);
+      driverFig = torso;
+    }
+  }
+
   // Gyrophares police
   let beacon = null;
   if (t.police) {
@@ -114,7 +228,86 @@ function buildVehicleMesh(typeName) {
     beacon.light = new THREE.PointLight(0x4466ff, 0, 26, 1.8);
     beacon.light.position.set(0, bar.position.y + 0.7, 0); g.add(beacon.light);
   }
-  return { group: g, wheels, frontPivots, headMat, brakeMat, beacon, wheelR, paint };
+  return { group: g, wheels, frontPivots, headMat, brakeMat, beacon, wheelR, paint, driverFig, glass: model?.glass || null };
+}
+
+
+// ---------------------------------------------------------------------------
+//                    FUMÉE DE PNEUS (patinage / drift)
+// ---------------------------------------------------------------------------
+/**
+ * Nuage de particules en `THREE.Points`, pool fixe de 96 puffs : aucune
+ * allocation pendant le jeu, un seul draw call, aucun shader custom.
+ * Émis depuis les roues arrière quand `driftAmount` dépasse un seuil — c'est
+ * le « patinage » visible qui accompagne le crissement.
+ */
+class TireSmoke {
+  constructor(scene) {
+    this.max = 96;
+    const geo = new THREE.BufferGeometry();
+    this.positions = new Float32Array(this.max * 3);
+    this.sizes = new Float32Array(this.max);
+    this.alpha = new Float32Array(this.max);
+    geo.setAttribute('position', new THREE.BufferAttribute(this.positions, 3));
+    geo.setAttribute('aSize', new THREE.BufferAttribute(this.sizes, 1));
+    geo.setAttribute('aAlpha', new THREE.BufferAttribute(this.alpha, 1));
+    // texture ronde procédurale (32²), générée une fois
+    const c = document.createElement('canvas'); c.width = c.height = 32;
+    const g = c.getContext('2d');
+    if (g) {
+      const grd = g.createRadialGradient(16, 16, 0, 16, 16, 16);
+      grd.addColorStop(0, 'rgba(255,255,255,0.9)');
+      grd.addColorStop(0.5, 'rgba(235,235,240,0.35)');
+      grd.addColorStop(1, 'rgba(220,220,230,0)');
+      g.fillStyle = grd; g.fillRect(0, 0, 32, 32);
+    }
+    const tex = new THREE.CanvasTexture(c);
+    this.mat = new THREE.PointsMaterial({
+      size: 1.6, map: tex, transparent: true, depthWrite: false,
+      opacity: 0.5, blending: THREE.NormalBlending, sizeAttenuation: true,
+      color: 0xd8dbe0,
+    });
+    this.points = new THREE.Points(geo, this.mat);
+    this.points.frustumCulled = false;
+    this.points.renderOrder = 3;
+    scene.add(this.points);
+    this.life = new Float32Array(this.max);
+    this.vel = new Float32Array(this.max * 3);
+    this.next = 0;
+    this._emitT = 0;
+    // on masque les particules inactives loin sous le sol
+    for (let i = 0; i < this.max; i++) this.positions[i * 3 + 1] = -999;
+  }
+  emit(x, y, z, vx, vz, count = 2) {
+    for (let k = 0; k < count; k++) {
+      const i = this.next; this.next = (this.next + 1) % this.max;
+      this.positions[i * 3] = x + randRange(-0.35, 0.35);
+      this.positions[i * 3 + 1] = y;
+      this.positions[i * 3 + 2] = z + randRange(-0.35, 0.35);
+      this.vel[i * 3] = vx * 0.25 + randRange(-1.1, 1.1);
+      this.vel[i * 3 + 1] = randRange(0.5, 1.5);
+      this.vel[i * 3 + 2] = vz * 0.25 + randRange(-1.1, 1.1);
+      this.life[i] = randRange(0.75, 1.45);
+      this.sizes[i] = randRange(0.9, 1.9);
+    }
+  }
+  update(dt) {
+    const pos = this.positions;
+    for (let i = 0; i < this.max; i++) {
+      if (this.life[i] <= 0) continue;
+      this.life[i] -= dt;
+      pos[i * 3] += this.vel[i * 3] * dt;
+      pos[i * 3 + 1] += this.vel[i * 3 + 1] * dt;
+      pos[i * 3 + 2] += this.vel[i * 3 + 2] * dt;
+      this.vel[i * 3] *= 0.94; this.vel[i * 3 + 2] *= 0.94;
+      this.vel[i * 3 + 1] *= 0.96;
+      this.sizes[i] += dt * 2.1;
+      this.alpha[i] = clamp(this.life[i] * 0.7, 0, 1);
+      if (this.life[i] <= 0) pos[i * 3 + 1] = -999;
+    }
+    this.points.geometry.attributes.position.needsUpdate = true;
+    this.points.geometry.attributes.aSize.needsUpdate = true;
+  }
 }
 
 // ================================ Véhicule =================================
@@ -183,24 +376,53 @@ export class Vehicle {
       else vf += inp.throttle * spec.accel * 0.55 * dt; // marche arrière
     }
     if (inp.brake) vf -= Math.sign(vf) * Math.min(Math.abs(vf), 20 * dt);
-    if (inp.handbrake) vf -= Math.sign(vf) * Math.min(Math.abs(vf), 7 * dt);
+    // frein à main : il bloque les roues ARRIÈRE, pas les quatre. On garde de
+    // l'élan (4 m/s²) pour que la glisse dure — c'est ce qui rend le drift
+    // contrôlable au lieu d'être un simple tête-à-queue.
+    if (inp.handbrake) vf -= Math.sign(vf) * Math.min(Math.abs(vf), 4 * dt);
     vf -= vf * 0.35 * dt + Math.sign(vf) * 0.4 * dt;  // traînée + roulement
     if (Math.abs(vf) < 0.05 && inp.throttle === 0) vf = 0;
     vf = clamp(vf, -9, spec.topSpeed);
 
-    // Direction (modèle bicyclette) — braquage réduit à haute vitesse
-    const maxSteer = 0.58 / (1 + Math.abs(vf) * 0.05);
+    // ------------------------------------------------------------------
+    // DIRECTION + DÉRIVE (v0.4)
+    // Modèle bicyclette, enrichi d'un couple de lacet de survirage quand le
+    // frein à main est tiré : la voiture pivote PLUS que ce que le braquage
+    // commande, l'arrière décroche, et l'adhérence latérale chute vraiment.
+    // C'est ce qui distingue un drift d'un simple freinage.
+    // ------------------------------------------------------------------
+    const speedAbs = Math.abs(vf);
+    const maxSteer = 0.58 / (1 + speedAbs * 0.05);
     const steerAngle = inp.steer * maxSteer;
-    if (Math.abs(vf) > 0.1) this.heading += (vf / (spec.len * 0.62)) * Math.tan(steerAngle) * dt;
+    const yawFromSteer = (vf / (spec.len * 0.62)) * Math.tan(steerAngle);
+
+    // survirage : n'existe qu'avec du vitesse + du braquage + frein à main
+    this.driftAmount = this.driftAmount || 0;
+    const handbrakeOn = !!inp.handbrake;
+    const driftGate = clamp((speedAbs - 3) / 7, 0, 1) * clamp(Math.abs(inp.steer), 0, 1) * (handbrakeOn ? 1 : 0);
+    // inertie : le drift s'installe et se referme progressivement
+    this.driftAmount = damp(this.driftAmount, driftGate, handbrakeOn ? 6 : 3.2, dt);
+    const oversteer = this.driftAmount * 1.55 * Math.sign(inp.steer) * Math.sign(vf || 1);
+    if (speedAbs > 0.1) this.heading += (yawFromSteer + oversteer) * dt;
     this.steerVisual = damp(this.steerVisual, steerAngle, 10, dt);
 
-    // Adhérence latérale (grip) — réduite par la pluie et le frein à main
-    const grip = spec.grip * ctx.env.gripFactor * (inp.handbrake ? 0.22 : 1);
+    // Adhérence latérale : pluie + frein à main. Au frein à main la glisse
+    // est RÉELLE (grip 0,10 au lieu de 0,22) et elle est entretenue par le
+    // lacet ci-dessus au lieu d'être seulement amortie.
+    const gripBase = spec.grip * ctx.env.gripFactor;
+    const grip = gripBase * (handbrakeOn ? 0.10 : 1);
     vr *= Math.exp(-grip * dt);
+    // le pneu arrière pousse latéralement : on injecte la vitesse de lacet
+    if (this.driftAmount > 0.02) {
+      const lateralKick = oversteer * spec.len * 0.34;
+      vr = clamp(vr + lateralKick * dt * 6, -14, 14);
+    }
 
     const nf = this.forward(); const nr = { x: nf.z, z: -nf.x };
     this.vel.x = nf.x * vf + nr.x * vr;
     this.vel.z = nf.z * vf + nr.z * vr;
+    // angle de dérive (degrés) lu par l'audio et les effets
+    this.slipAngle = Math.atan2(vr, Math.max(0.6, Math.abs(vf))) * 180 / Math.PI;
     this.pos.x += this.vel.x * dt;
     this.pos.z += this.vel.z * dt;
     this.vf = vf;
@@ -221,7 +443,10 @@ export class Vehicle {
         this._crashCd = 0.8;
         this.damage = clamp(this.damage + impact * 0.012, 0, 1);
         Bus.emit('crash', { pos: { x: this.pos.x, z: this.pos.z }, speed: impact, vehicle: this });
-        if (this.driver === 'player' && impact > 9) Bus.emit('crime', { severity: 1, pos: this.pos });
+        // Heurter un MUR, un lampadaire ou une bordure n'est pas un délit.
+        // Aucun crime n'est émis ici : seuls les délits réels comptent
+        // (vol de véhicule, piéton renversé, collision avec un autre véhicule
+        // occupé — cf. resolveVehicleCollisions, et refus d'obtempérer).
       }
     }
 
@@ -327,16 +552,30 @@ class TrafficDriver {
     }
     if (!this.isPolice && ctx.peds?.anyPedAhead(v, 8)) target = 0;
 
-    // Police : foncer vers sa cible directe quand elle est proche et visible
+    // --- POURSUITE ---------------------------------------------------------
+    // À courte portée : viser le joueur directement, avec un point
+    // d'interception (position future estimée) pour ne pas « suivre à la
+    // traîne ». À moyenne portée : rouler vite vers son nœud sans respecter
+    // les feux. Au-delà : navigation normale (elle doit emprunter les rues).
     if (this.isPolice && this.directTarget) {
       const tp = this.directTarget;
       const ddx = tp.x - v.pos.x, ddz = tp.z - v.pos.z;
       const dd = Math.hypot(ddx, ddz);
-      if (dd < 46) {
-        const des = Math.atan2(ddx, ddz);
-        v.inputs.steer = clamp(angleDelta(v.heading, des) * 1.8, -1, 1);
-        target = dd > 10 ? 22 : 4;
+      if (dd < 70) {
+        // interception : on vise là où le joueur SERA dans ~0,8 s
+        const lead = this.targetVel
+          ? { x: tp.x + this.targetVel.x * 0.8, z: tp.z + this.targetVel.z * 0.8 }
+          : tp;
+        const des = Math.atan2(lead.x - v.pos.x, lead.z - v.pos.z);
+        v.inputs.steer = clamp(angleDelta(v.heading, des) * 2.1, -1, 1);
+        // freiner pour ne pas traverser le joueur, sinon le percuter franchement
+        target = dd > 9 ? 26 : (dd > 5.5 ? 8 : 0);
+        if (dd < 5.5) v.inputs.handbrake = true;
+      } else if (dd < 150) {
+        target = 24;   // fonce vers la zone
       }
+      // gyrophares + sirène dès qu'une unité est en chasse
+      v.beaconOn = true;
     }
 
     // Traduction vitesse -> pédales
@@ -358,6 +597,8 @@ export class TrafficSystem {
     this.police = [];
     this.wanted = 0; this.heat = 0; this.bustTimer = 0;
     this._spawnT = 0; this._frame = 0;
+    this.smoke = new TireSmoke(scene);
+    this.playerVehicle = null;    // renseigné par main.js pour les effets
     Bus.on('crime', ({ severity }) => this.addHeat(severity));
   }
 
@@ -490,21 +731,59 @@ export class TrafficSystem {
   // ------------------------------- Police ----------------------------------
   addHeat(sev) { this.heat = clamp(this.heat + sev * 0.55, 0, 3.4); }
   clearWanted() { this.heat = 0; this.wanted = 0; this.bustTimer = 0; }
+  /**
+   * Cherche un nœud routier où faire apparaître une unité SANS qu'elle sorte
+   * de nulle part à l'écran : on privilégie la zone dans le dos de la caméra,
+   * entre 110 et 190 m. Si aucun nœud ne convient, on prend le plus lointain
+   * disponible — jamais devant le joueur à courte distance.
+   */
+  _policeSpawnNode(ctx, playerPos) {
+    const camYaw = ctx.player?.camYaw ?? 0;
+    // direction REGARDÉE par la caméra sur le plan du sol
+    const viewX = -Math.sin(camYaw), viewZ = -Math.cos(camYaw);
+    const candidates = [];
+    for (let k = 0; k < 26; k++) {
+      const a = rand() * Math.PI * 2;
+      const r = randRange(115, 190);
+      const node = this.city.nearestNode(playerPos.x + Math.cos(a) * r, playerPos.z + Math.sin(a) * r);
+      if (!node) continue;
+      const dx = node.x - playerPos.x, dz = node.z - playerPos.z;
+      const d = Math.hypot(dx, dz);
+      if (d < 100 || d > 240) continue;
+      const inFront = (dx / d) * viewX + (dz / d) * viewZ;   // 1 = pile devant
+      candidates.push({ node, d, inFront });
+    }
+    if (!candidates.length) {
+      return this.city.nearestNode(playerPos.x + randRange(-150, 150), playerPos.z + randRange(-150, 150));
+    }
+    // on privilégie ce qui est DERRIÈRE (inFront < 0) et pas trop loin
+    candidates.sort((a, b) => (a.inFront - b.inFront) * 120 + (a.d - b.d) * 0.25);
+    return candidates[0].node;
+  }
+
   updatePolice(dt, ctx) {
     this.wanted = this.heat >= 2.6 ? 3 : this.heat >= 1.5 ? 2 : this.heat >= 0.5 ? 1 : 0;
     const wantCount = this.wanted === 0 ? 0 : this.wanted === 1 ? 1 : 2;
     const playerPos = ctx.playerPos();
 
-    // spawn
+    // --- réquisition : réutiliser une unité DÉJÀ en patrouille si possible ---
     while (this.police.length < wantCount) {
+      const node = this._policeSpawnNode(ctx, playerPos);
+      if (!node) break;
       const v = new Vehicle(this.scene, 'Police');
       const drv = new TrafficDriver(v, this.city);
-      drv.isPolice = true; drv.aggressiveness = 1.25;
+      drv.isPolice = true; drv.aggressiveness = 1.3;
       v.driver = drv;
-      const node = this.city.nearestNode(playerPos.x + randRange(-90, 90), playerPos.z + randRange(-90, 90));
       drv.startAt(node, randInt(0, 3));
       v.beaconOn = true;
+      // elle arrive en sirène : petite accélération de rattrapage
+      v.vf = 12;
       this.police.push(v); this.vehicles.push(v);
+      // la 1re fois de la session, on prévient le joueur (pas de pop surprise)
+      if (!this._spawnNotified) {
+        this._spawnNotified = true;
+        Bus.emit('toast', { text: '🚨 Une unité converge vers vous — elle arrive par la route', kind: 'bad' });
+      }
     }
     // despawn / conduite
     let nearestCopDist = 999;
@@ -513,6 +792,7 @@ export class TrafficSystem {
       const d = Math.hypot(v.pos.x - playerPos.x, v.pos.z - playerPos.z);
       nearestCopDist = Math.min(nearestCopDist, d);
       if (this.wanted === 0 && d > 60) { // le joueur a semé la police
+        this._spawnNotified = false;
         v.active = false; v.group.visible = false;
         this.police.splice(i, 1);
         this.vehicles.splice(this.vehicles.indexOf(v), 1);
@@ -521,6 +801,14 @@ export class TrafficSystem {
       const drv = v.driver;
       drv.destNode = this.city.nearestNode(playerPos.x, playerPos.z);
       drv.directTarget = playerPos;
+      // vitesse du joueur (pour l'interception) : dérivée de sa position
+      if (!this._lastPlayerPos) this._lastPlayerPos = { x: playerPos.x, z: playerPos.z };
+      const dtSafe = Math.max(1e-3, dt);
+      drv.targetVel = {
+        x: (playerPos.x - this._lastPlayerPos.x) / dtSafe,
+        z: (playerPos.z - this._lastPlayerPos.z) / dtSafe,
+      };
+      this._lastPlayerPos.x = playerPos.x; this._lastPlayerPos.z = playerPos.z;
       drv.update(dt, ctx);
     }
     ctx.audio?.setSiren(this.wanted > 0 ? clamp(1 - nearestCopDist / 130, 0, 1) : 0);
@@ -602,6 +890,38 @@ export class TrafficSystem {
     }
     this.resolveVehicleCollisions(ctx);
     this.updatePolice(dt, ctx);
+    this._driftFx(dt, ctx);
+  }
+
+  /**
+   * Effets de drift : fumée aux roues arrière du véhicule du joueur et
+   * crissement audio proportionnel à la glisse réelle. On ne triche pas :
+   * `driftAmount` vient de la physique, donc pas de crissement en ligne
+   * droite ni à l'arrêt.
+   */
+  _driftFx(dt, ctx) {
+    this.smoke.update(dt);
+    const v = this.playerVehicle;
+    if (!v) { ctx.audio?.setSkid?.(0); return; }
+    const drift = v.driftAmount || 0;
+    const wheelspin = v.inputs.throttle > 0.6 && Math.abs(v.vf) < 6 && v.driver === 'player';
+    const amount = clamp(drift * 1.15 + (wheelspin ? 0.35 : 0), 0, 1);
+    ctx.audio?.setSkid?.(amount, !!v.inputs.handbrake);
+    if (amount > 0.22 && v.driftAmount > 0.18) {
+      this.smoke._emitT = (this.smoke._emitT || 0) + dt;
+      const period = 0.045;
+      while (this.smoke._emitT > period) {
+        this.smoke._emitT -= period;
+        const f = v.forward();
+        for (const sx of [-1, 1]) {
+          const rx = f.z * sx * v.spec.wid * 0.36, rz = -f.x * sx * v.spec.wid * 0.36;
+          this.smoke.emit(
+            v.pos.x - f.x * v.spec.len * 0.33 + rx, 0.28,
+            v.pos.z - f.z * v.spec.len * 0.33 + rz,
+            -v.vel.x, -v.vel.z, 1);
+        }
+      }
+    }
   }
 
   stats() {

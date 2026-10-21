@@ -24,6 +24,21 @@ export class UI {
       downed: $('downed'), downedSub: $('downed-sub'), gpsHint: $('gps-hint'),
     };
     this.mini = $('minimap').getContext('2d');
+    // Clic sur la mini-carte = poser une destination (mode Libre). En mode
+    // Histoire, le clic ne fait rien : l'objectif reste celui de la mission.
+    $('minimap')?.addEventListener('click', (e) => {
+      const ctx = this._lastCtx;
+      if (!ctx || ctx.missions?.enabled) return;
+      const r = e.currentTarget.getBoundingClientRect();
+      const S = 190, C = S / 2, radius = 150, sc = S / (radius * 2);
+      const pp = ctx.playerPos();
+      const x = pp.x + ((e.clientX - r.left) - C) / sc;
+      const z = pp.z + ((e.clientY - r.top) - C) / sc;
+      ctx.missions.setFreeTarget(x, z);
+      ctx.gps.locked = true;
+      ctx.gps.setTarget(x, z);
+      Bus.emit('toast', { text: '🗺️ Destination libre posée sur la carte', kind: '' });
+    });
     this._lastClock = ''; this._miniT = 0; this._promptText = undefined;
     this.debugVisible = false;
     this.shopOpen = false; this.shopTab = 'houses';
@@ -59,7 +74,14 @@ export class UI {
     el.className = 'toast ' + kind;
     el.textContent = text;
     this.els.toasts.appendChild(el);
-    while (this.els.toasts.children.length > 3) this.els.toasts.firstChild.remove();
+    // 3 toasts maximum : on retire le plus ancien (compatible DOM partiel)
+    while (this.els.toasts.children.length > 3) {
+      const old = this.els.toasts.firstChild || this.els.toasts.children[0];
+      if (!old) break;
+      old.remove();
+      if (old.parentNode === this.els.toasts) this.els.toasts.children.shift();
+      else this.els.toasts.children.shift();
+    }
     setTimeout(() => el.classList.add('out'), 3000);
     setTimeout(() => el.remove(), 3450);
   }
@@ -188,27 +210,39 @@ export class UI {
       g.fillStyle = b.kind === 'shop' ? '#4a5a6e' : (b.h > 25 ? '#4d5c70' : '#3d4a5a');
       g.fillRect(X(b.x - b.w / 2), Z(b.z - b.d / 2), Math.max(1.5, b.w * sc), Math.max(1.5, b.d * sc));
     }
-    // --- tracé GPS (sous les marqueurs) ---
+    // --- tracé GPS : style Google Maps (liseré sombre + bleu vif) ---------
     const route = ctx.gps?.routePoints?.() || [];
     if (route.length > 1) {
-      g.strokeStyle = 'rgba(53,214,255,0.85)'; g.lineWidth = 3.4; g.lineJoin = 'round';
-      g.beginPath();
-      let started = false;
-      for (const n of route) {
-        if (Math.abs(n.x - pp.x) > radius * 2.2 || Math.abs(n.z - pp.z) > radius * 2.2) { started = false; continue; }
-        const sx = X(n.x), sz = Z(n.z);
-        if (!started) { g.moveTo(sx, sz); started = true; } else g.lineTo(sx, sz);
-      }
-      g.stroke();
-      // flèches directionnelles sur le tracé (toutes les 3 nodes)
-      g.fillStyle = '#9fe6ff';
-      for (let k = 2; k < route.length - 1; k += 3) {
+      // On trace TOUT l'itinéraire, pas seulement le voisinage : même hors du
+      // cadre, le segment est tronqué proprement par le canvas. C'est ce qui
+      // permet de suivre la route « de loin ».
+      // On trace TOUT l'itinéraire (pas seulement le voisinage) : même hors
+      // cadre, le segment est tronqué par le canvas. C'est ce qui permet de
+      // suivre la route « de loin », comme sur Google Maps.
+      const tracePath = () => {
+        g.beginPath();
+        let started = false;
+        for (const n of route) {
+          const sx = C + (n.x - pp.x) * sc, sz = C + (n.z - pp.z) * sc;
+          // marge généreuse : on garde les points hors cadre pour que la ligne
+          // sorte proprement de l'écran au lieu de s'arrêter net
+          if (sx < -S || sz < -S || sx > S * 2 || sz > S * 2) { started = false; continue; }
+          if (!started) { g.moveTo(sx, sz); started = true; } else g.lineTo(sx, sz);
+        }
+      };
+      g.lineJoin = 'round'; g.lineCap = 'round';
+      tracePath(); g.strokeStyle = 'rgba(6,32,64,0.95)'; g.lineWidth = 7.5; g.stroke();
+      tracePath(); g.strokeStyle = '#2f8bff'; g.lineWidth = 4.6; g.stroke();
+      tracePath(); g.strokeStyle = 'rgba(160,214,255,0.75)'; g.lineWidth = 1.4; g.stroke();
+      // flèches directionnelles bleues sur le tracé (toutes les 3 nodes)
+      for (let k = 1; k < route.length - 1; k += 3) {
         const a = route[k], b = route[k + 1];
-        const mx = X(a.x), mz = Z(a.z);
-        if (mx < 6 || mz < 6 || mx > S - 6 || mz > S - 6) continue;
+        const mx = C + (a.x - pp.x) * sc, mz = C + (a.z - pp.z) * sc;
+        if (mx < 5 || mz < 5 || mx > S - 5 || mz > S - 5) continue;
         const ang = Math.atan2(b.x - a.x, b.z - a.z);
-        g.save(); g.translate(mx, mz); g.rotate(-ang + Math.PI);
-        g.beginPath(); g.moveTo(0, -5); g.lineTo(3.4, 3.4); g.lineTo(-3.4, 3.4); g.closePath(); g.fill();
+        g.save(); g.translate(mx, mz); g.rotate(Math.PI - ang);
+        g.fillStyle = '#eaf6ff';
+        g.beginPath(); g.moveTo(0, -4.6); g.lineTo(3.1, 3.2); g.lineTo(-3.1, 3.2); g.closePath(); g.fill();
         g.restore();
       }
     }
@@ -350,11 +384,6 @@ export class UI {
   _shopError(reason, ctx) {
     Bus.emit('toast', { text: '⛔ ' + reason, kind: 'bad' });
     this._lastMoney = -1; this._refreshShop(ctx);
-  }
-
-  toggleDebug() {
-    this.debugVisible = !this.debugVisible;
-    this.els.debug.classList.toggle('hidden', !this.debugVisible);
   }
 
   showDowned(on, text) {

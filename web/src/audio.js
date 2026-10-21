@@ -45,6 +45,25 @@ export class AudioSys {
       this.sirGain = this.ctx.createGain(); this.sirGain.gain.value = 0;
       this.sirOsc.connect(this.sirGain); this.sirGain.connect(this.master);
       this.sirOsc.start();
+      // ---- CRISSEMENT DE PNEUS ----------------------------------------
+      // Synthèse : bruit blanc → passe-bande aigu (2,4 kHz, Q élevé) + une
+      // pointe à 1,1 kHz, le tout modulé par une LFO irrégulière. C'est la
+      // recette classique du « tyre squeal » : pas d'échantillon à charger,
+      // donc aucun coût réseau et un timbre identique à chaque partie.
+      this.skidFilter = this.ctx.createBiquadFilter();
+      this.skidFilter.type = 'bandpass'; this.skidFilter.frequency.value = 2400; this.skidFilter.Q.value = 5.5;
+      this.skidFilter2 = this.ctx.createBiquadFilter();
+      this.skidFilter2.type = 'peaking'; this.skidFilter2.frequency.value = 1150; this.skidFilter2.Q.value = 3; this.skidFilter2.gain.value = 9;
+      this.skidGain = this.ctx.createGain(); this.skidGain.gain.value = 0;
+      const skidSrc = this.ctx.createBufferSource(); skidSrc.buffer = buf; skidSrc.loop = true;
+      skidSrc.connect(this.skidFilter); this.skidFilter.connect(this.skidFilter2);
+      this.skidFilter2.connect(this.skidGain); this.skidGain.connect(this.master);
+      const wobble = this.ctx.createOscillator(); wobble.type = 'sine'; wobble.frequency.value = 7.3;
+      const wobbleGain = this.ctx.createGain(); wobbleGain.gain.value = 240;
+      wobble.connect(wobbleGain); wobbleGain.connect(this.skidFilter.frequency);
+      wobble.start(); skidSrc.start();
+      // petit chuintement caoutchouc très aigu, pour le grain
+      this.skidHi = noise(6200, 'highpass', 0);
       this.ok = true;
     } catch (e) { console.warn('[Audio] indisponible', e); }
   }
@@ -57,7 +76,24 @@ export class AudioSys {
     this._set(this.engSub.frequency, 26 + rpm * 92, 0.05);
     this._set(this.engFilter.frequency, 380 + rpm * 1150, 0.06);
   }
-  engineOff() { if (this.ok) this._set(this.engGain.gain, 0, 0.1); }
+  engineOff() {
+    if (!this.ok) return;
+    this._set(this.engGain.gain, 0, 0.1);
+    this._set(this.skidGain.gain, 0, 0.12);
+    this._set(this.skidHi.gain, 0, 0.12);
+  }
+  /**
+   * Crissement de pneus.
+   * @param {number} amount 0 = silence, 1 = dérive maximale
+   * @param {boolean} locked true = roue bloquée (frein à main) → plus aigu
+   */
+  setSkid(amount, locked = false) {
+    if (!this.ok) return;
+    const a = Math.min(Math.max(amount, 0), 1);
+    this._set(this.skidGain.gain, a * 0.085, 0.05);
+    this._set(this.skidHi.gain, a * a * 0.055, 0.05);
+    this._set(this.skidFilter.frequency, (locked ? 3050 : 2350) + a * 700, 0.08);
+  }
   setRain(intensity) { if (this.ok) this._set(this.rainGain.gain, intensity * 0.16, 0.4); }
   setSiren(intensity) { if (this.ok) this._set(this.sirGain.gain, Math.min(intensity, 1) * 0.075, 0.2); }
   toggleMute() {

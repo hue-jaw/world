@@ -21,7 +21,8 @@ const BTN = {
   HOME: 16,
 };
 
-const deadzone = (v) => (Math.abs(v) < DEAD ? 0 : (v - Math.sign(v) * DEAD) / (1 - DEAD));
+/** Zone morte radiale, réglable via le menu Manette (this.deadzone). */
+const applyDead = (v, dead) => (Math.abs(v) < dead ? 0 : (v - Math.sign(v) * dead) / (1 - dead));
 
 export class GamepadInput {
   constructor() {
@@ -63,10 +64,11 @@ export class GamepadInput {
       }
     }
     this.connected = true; this.name = pad.id;
-    this.axes[0] = deadzone(pad.axes[0] ?? 0);
-    this.axes[1] = deadzone(pad.axes[1] ?? 0);
-    this.axes[2] = deadzone(pad.axes[2] ?? 0);
-    this.axes[3] = deadzone(pad.axes[3] ?? 0);
+    const dz = this.deadzone ?? DEAD;
+    this.axes[0] = applyDead(pad.axes[0] ?? 0, dz);
+    this.axes[1] = applyDead(pad.axes[1] ?? 0, dz);
+    this.axes[2] = applyDead(pad.axes[2] ?? 0, dz);
+    this.axes[3] = applyDead(pad.axes[3] ?? 0, dz);
     this._pressed.clear();
     for (let i = 0; i < 17; i++) {
       const b = pad.buttons[i];

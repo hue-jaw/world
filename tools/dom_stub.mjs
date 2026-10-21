@@ -43,7 +43,19 @@ export class FakeElement {
   addEventListener(type, fn) { if (!this._listeners.has(type)) this._listeners.set(type, []); this._listeners.get(type).push(fn); }
   removeEventListener() {}
   getContext() { return ctx2dStub; }
-  querySelector() { return null; }
+  // Sélecteur minimal : "#id" renvoie un élément factice, ce qui suffit à
+  // excercer la construction du menu headless (les vrais tests DOM restent
+  // dans le navigateur). Les sélecteurs complexes renvoient null.
+  querySelector(sel) {
+    if (typeof sel === 'string' && sel.startsWith('#')) {
+      if (!this._q || !this._q.has(sel)) {
+        if (!this._q) this._q = new Map();
+        this._q.set(sel, new FakeElement('div', sel.slice(1)));
+      }
+      return this._q.get(sel);
+    }
+    return null;
+  }
   querySelectorAll() { return []; }
   setAttribute() {}
   getAttribute() { return null; }

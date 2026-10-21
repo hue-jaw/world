@@ -21,6 +21,119 @@ import { MODELS } from './assets.generated.js';
 
 const loader = new GLTFLoader();
 
+
+// ---------------------------------------------------------------------------
+//              VITRES TRANSPARENTES (découpe par couleur de palette)
+// ---------------------------------------------------------------------------
+/**
+ * Les modèles Kenney n'ont qu'UN seul matériau (« colormap ») : la carrosserie
+ * et les vitres partagent la même texture, distinguées uniquement par la
+ * couleur des texels. Pour rendre les vitres réellement transparentes (et
+ * laisser voir le conducteur), il faut donc :
+ *   1) lire la couleur de la palette pour chaque triangle ;
+ *   2) séparer l'index en deux : opaque / verre ;
+ *   3) donner au verre un matériau transparent.
+ *
+ * La lecture de la texture se fait une seule fois par modèle, via un canvas
+ * 2D hors écran. Si l'image n'est pas accessible (test headless, contexte
+ * dégradé), on renvoie simplement `null` : la voiture reste opaque, sans
+ * erreur ni régression.
+ */
+const _colorCache = new WeakMap();
+function paletteSampler(mesh) {
+  const tex = mesh?.material?.map;
+  const img = tex?.image;
+  if (!img || !img.width) return null;
+  if (_colorCache.has(tex)) return _colorCache.get(tex);
+  let sampler = null;
+  try {
+    const S = 128;
+    const c = document.createElement('canvas');
+    c.width = S; c.height = S;
+    const g = c.getContext('2d');
+    if (!g || typeof g.getImageData !== 'function') return null;
+    g.drawImage(img, 0, 0, S, S);
+    const data = g.getImageData(0, 0, S, S).data;
+    sampler = (u, v) => {
+      const x = Math.min(S - 1, Math.max(0, Math.floor(u * S)));
+      const y = Math.min(S - 1, Math.max(0, Math.floor((1 - v) * S)));
+      const i = (y * S + x) * 4;
+      return [data[i], data[i + 1], data[i + 2]];
+    };
+  } catch { sampler = null; }
+  _colorCache.set(tex, sampler);
+  return sampler;
+}
+
+/** Un texel est-il du verre teinté (bleu/gris froid) ? */
+export function isGlassColor(r, g, b) {
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+  // bleu dominant, pas trop sombre, pas blanc pur (carrosserie claire)
+  return b > r + 18 && b >= g - 6 && lum > 55 && lum < 232 && (max - min) > 16;
+}
+
+/**
+ * Sépare la carrosserie (mesh unique) en un mesh opaque + un mesh de verre.
+ * @returns {{body: THREE.Mesh, glass: THREE.Mesh|null}}
+ */
+export function splitGlass(bodyMesh) {
+  const sample = paletteSampler(bodyMesh);
+  if (!sample) return { body: bodyMesh, glass: null };
+  const geo = bodyMesh.geometry;
+  const uv = geo.attributes.uv;
+  if (!uv) return { body: bodyMesh, glass: null };
+  const idx = geo.index;
+  const triCount = (idx ? idx.count : geo.attributes.position.count) / 3;
+
+  // bbox pour n'accepter que la partie haute (une vitre est au-dessus du
+  // bas de caisse ; cela évite de classer un pare-chocs bleu par erreur)
+  geo.computeBoundingBox();
+  const bb = geo.boundingBox;
+  const height = bb.max.y - bb.min.y;
+  const yGlassMin = bb.min.y + height * 0.42;
+
+  const opaque = [], glassTri = [];
+  const get = (i) => (idx ? idx.getX(i) : i);
+  for (let t = 0; t < triCount; t++) {
+    const a = get(t * 3), b = get(t * 3 + 1), c = get(t * 3 + 2);
+    const u = (uv.getX(a) + uv.getX(b) + uv.getX(c)) / 3;
+    const v = (uv.getY(a) + uv.getY(b) + uv.getY(c)) / 3;
+    const col = sample(u, v);
+    const y = (geo.attributes.position.getY(a) + geo.attributes.position.getY(b) + geo.attributes.position.getY(c)) / 3;
+    if (col && y >= yGlassMin && isGlassColor(col[0], col[1], col[2])) {
+      glassTri.push(a, b, c);
+    } else {
+      opaque.push(a, b, c);
+    }
+  }
+  // garde-fou : si la détection attrape trop ou trop peu, on ne casse rien
+  const ratio = glassTri.length / 3 / Math.max(1, triCount);
+  if (ratio < 0.01 || ratio > 0.45) return { body: bodyMesh, glass: null };
+
+  const opaqueGeo = geo.clone();
+  opaqueGeo.setIndex(opaque);
+  const glassGeo = geo.clone();
+  glassGeo.setIndex(glassTri);
+
+  const body = new THREE.Mesh(opaqueGeo, bodyMesh.material);
+  body.name = bodyMesh.name + '_opaque';
+  const glassMat = new THREE.MeshStandardMaterial({
+    color: 0x9fc4dd,
+    metalness: 0.15,
+    roughness: 0.06,
+    transparent: true,
+    opacity: 0.34,
+    envMapIntensity: 1.6,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+  const glass = new THREE.Mesh(glassGeo, glassMat);
+  glass.name = bodyMesh.name + '_glass';
+  glass.renderOrder = 2;
+  return { body, glass };
+}
+
 // --------------------------- Correspondances --------------------------------
 const VEHICLE_MODEL = {
   Citadine: 'car_hatchback-sports.glb',
@@ -355,7 +468,46 @@ export const Assets = {
     group.add(body);
     body.scale.set(proto.sx, proto.sy, proto.sz);
     body.updateMatrixWorld(true);
-    body.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = false; } });
+    body.traverse((o) => {
+      if (!o.isMesh) return;
+      o.castShadow = true; o.receiveShadow = false;
+      // La texture « colormap » des modèles CC0 encode la couleur ET les
+      // détails. On relève le caractère peint : légèrement métallique, plutôt
+      // lisse, et réfléchissant le ciel (le vernis est simulé par le clearcoat
+      // des matériaux créés dans vehicles.js pour les carrosseries procédurales).
+      for (const m of (Array.isArray(o.material) ? o.material : [o.material])) {
+        if (!m || /wheel/i.test(o.name)) continue;
+        if ('roughness' in m) m.roughness = Math.min(m.roughness, 0.42);
+        if ('metalness' in m) m.metalness = Math.max(m.metalness, 0.22);
+        m.envMapIntensity = 1.15;
+      }
+    });
+
+    // --- vitres transparentes : on découpe le mesh de carrosserie principal ---
+    let glassMesh = null;
+    const mainBody = (() => {
+      let best = null, bestCount = -1;
+      body.traverse((o) => {
+        if (!o.isMesh || /wheel/i.test(o.name)) return;
+        const n = o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count;
+        if (n > bestCount) { bestCount = n; best = o; }
+      });
+      return best;
+    })();
+    if (mainBody) {
+      const split = splitGlass(mainBody);
+      if (split.glass) {
+        const parent = mainBody.parent;
+        parent.remove(mainBody);
+        // la carrosserie opaque conserve l'ombre ; le verre n'en projette pas
+        split.body.castShadow = true;
+        split.body.receiveShadow = false;
+        parent.add(split.body);
+        split.glass.castShadow = false;
+        parent.add(split.glass);
+        glassMesh = split.glass;
+      }
+    }
 
     const wheels = [];
     const frontWheels = [];
@@ -395,6 +547,7 @@ export const Assets = {
 
     return {
       group, wheels, frontWheels,
+      glass: glassMesh,
       wheelRadius: wheelRadius === 0.33 ? 0.33 : wheelRadius,
       height: proto.height, length: proto.length,
     };

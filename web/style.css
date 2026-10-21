@@ -151,3 +151,75 @@ kbd { background:#1c2432; border:1px solid #3a465e; border-bottom-width:3px; bor
 /* guidage GPS : petit rappel discret */
 #gps-hint { position:absolute; left:50%; bottom:86px; transform:translateX(-50%); font-size:12px;
   color:#9fe6ff; letter-spacing:1px; text-shadow:0 0 12px rgba(53,214,255,.55); opacity:.85; }
+
+/* ============================================================================
+   MENU PAUSE (v0.4) — Graphismes / Contrôles / Manette / Spécial
+   ========================================================================== */
+#pause-menu { position:fixed; inset:0; z-index:70; display:flex; align-items:center; justify-content:center;
+  background:rgba(3,7,12,.72); backdrop-filter:blur(9px); }
+#pause-menu.hidden { display:none; }
+.pm-box { width:min(880px,94vw); max-height:88vh; display:flex; flex-direction:column;
+  background:linear-gradient(180deg,rgba(18,26,39,.985),rgba(9,14,22,.99));
+  border:1px solid #2b4162; border-radius:20px; box-shadow:0 34px 90px rgba(0,0,0,.66); overflow:hidden;
+  font-family:inherit; color:#e8f1ff; }
+.pm-head { display:flex; align-items:center; gap:12px; padding:15px 20px; border-bottom:1px solid #22314a;
+  background:linear-gradient(90deg,rgba(32,81,143,.30),transparent); }
+.pm-logo { display:flex; align-items:center; gap:9px; font-size:17px; letter-spacing:2px; }
+.pm-logo svg { color:#5b9bff; }
+.pm-logo i { font-style:normal; font-size:11px; letter-spacing:1px; color:#7f97b5; text-transform:uppercase; }
+.pm-mode { margin-left:auto; display:flex; align-items:center; gap:6px; font-size:12px; letter-spacing:.6px;
+  color:#9fc6ff; background:rgba(47,139,255,.12); border:1px solid rgba(91,155,255,.4);
+  border-radius:999px; padding:5px 11px; }
+.pm-close { background:#16202f; border:1px solid #33507a; color:#cfe0f5; border-radius:9px; width:32px; height:32px;
+  display:grid; place-items:center; cursor:pointer; }
+.pm-close:hover { background:#22344d; }
+.pm-tabs { display:flex; gap:6px; padding:12px 18px 0; flex-wrap:wrap; }
+.pm-tabs button { display:flex; align-items:center; gap:7px; background:#131d2b; border:1px solid #27395a;
+  color:#a9c0dd; border-radius:10px 10px 0 0; padding:9px 14px; font-size:13px; cursor:pointer; }
+.pm-tabs button.active { background:#1d4f8c; border-color:#5b9bff; color:#fff; }
+.pm-body { padding:16px 20px 22px; overflow-y:auto; display:flex; flex-direction:column; gap:10px; }
+.pm-section { display:flex; align-items:center; gap:9px; flex-wrap:wrap; margin-top:6px;
+  font-size:13.5px; font-weight:700; letter-spacing:.4px; color:#bcd4f2; }
+.pm-section svg { color:#5b9bff; }
+.pm-section:first-child { margin-top:0; }
+.pm-hint { font-size:11.5px; line-height:1.5; color:#8298b5; margin:2px 0 6px 2px; }
+.pm-hint b { color:#a9c0dd; }
+.pm-row { display:flex; align-items:center; gap:14px; padding:9px 12px; border-radius:11px;
+  background:rgba(255,255,255,.032); border:1px solid rgba(255,255,255,.055); }
+.pm-label { flex:1; min-width:0; }
+.pm-label b { display:block; font-size:13px; color:#e8f1ff; output:normal; }
+.pm-label i { font-style:normal; font-size:11px; color:#8ea6c4; }
+.pm-ctl { display:flex; }
+.pm-seg { display:flex; gap:4px; background:#0e1622; border:1px solid #253550; border-radius:10px; padding:3px; }
+.pm-seg button { background:transparent; border:0; color:#93aac8; border-radius:7px; padding:6px 11px;
+  font-size:12px; cursor:pointer; white-space:nowrap; }
+.pm-seg button:hover { background:rgba(255,255,255,.06); }
+.pm-seg button.on { background:#1f6fbe; color:#fff; box-shadow:0 0 0 1px #4d9bff inset; }
+.pm-weather { display:flex; gap:8px; flex-wrap:wrap; margin:2px 0 6px; }
+.pm-weather button { display:flex; align-items:center; gap:7px; background:#131d2b; border:1px solid #27395a;
+  color:#a9c0dd; border-radius:11px; padding:9px 13px; font-size:12.5px; cursor:pointer; }
+.pm-weather button svg { color:#7fb3ff; }
+.pm-weather button.on { background:#1a4d7f; border-color:#4d9bff; color:#fff; }
+.pm-weather button.on svg { color:#cfe6ff; }
+.pm-actions { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:8px; }
+.pm-actions button { display:flex; align-items:center; gap:9px; text-align:left; background:#141f2e;
+  border:1px solid #27395a; color:#c9dcf2; border-radius:11px; padding:11px 13px; font-size:12.5px; cursor:pointer; }
+.pm-actions button:hover { background:#1b2a3e; border-color:#3d5b88; }
+.pm-actions button svg { color:#7fb3ff; flex:none; }
+.pm-actions button.pm-danger { border-color:#7a2f2f; color:#ffb9b9; }
+.pm-actions button.pm-danger svg { color:#ff8f8f; }
+.pm-keys { display:grid; grid-template-columns:repeat(auto-fit,minmax(270px,1fr)); gap:6px; }
+.pm-keys div { display:flex; align-items:center; gap:10px; font-size:12.5px; color:#a9c0dd;
+  padding:6px 9px; border-radius:8px; background:rgba(255,255,255,.022); }
+.pm-keys kbd { flex:none; min-width:74px; text-align:center; background:#0d1520; border:1px solid #2c405e;
+  border-bottom-width:2px; border-radius:6px; padding:4px 7px; font-size:11px; color:#dbe8f8; font-family:inherit; }
+.pm-diag { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:6px; }
+.pm-diag div { display:flex; justify-content:space-between; gap:8px; font-size:12px; color:#93aac8;
+  background:rgba(255,255,255,.03); border:1px solid rgba(255,255,255,.05); border-radius:8px; padding:7px 10px; }
+.pm-diag b { color:#dbe8f8; }
+.pm-ok { font-style:normal; color:#7ce38b; font-size:12px; }
+.pm-ko { font-style:normal; color:#ff9f9f; font-size:12px; }
+.pm-foot { display:flex; justify-content:space-between; gap:12px; padding:10px 20px; border-top:1px solid #22314a;
+  font-size:11px; color:#7288a5; flex-wrap:wrap; }
+.pm-foot svg { vertical-align:-2px; color:#7ce38b; }
+.pm-foot kbd { background:#0d1520; border:1px solid #2c405e; border-radius:5px; padding:1px 5px; font-family:inherit; }

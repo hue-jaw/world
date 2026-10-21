@@ -19,6 +19,8 @@ import { ECONOMY } from './core.js';
 import Assets from './assets.js';
 import Economy from './economy.js';
 import GPSSystem from './gps.js';
+import { Settings } from './settings.js';
+import MenuSystem from './menu.js';
 
 window.addEventListener('error', (e) => {
   const el = document.getElementById('loading');
@@ -93,8 +95,11 @@ const economy = new Economy(city);
 const gps = new GPSSystem(scene, city);
 
 const ctx = {
-  scene, city, env, traffic, peds, player, missions, audio, economy, gps,
+  // renderer exposé : les réglages graphiques (ombres, exposition) en ont besoin
+  scene, city, env, traffic, peds, player, missions, audio, economy, gps, renderer,
   ui: null,
+  menu: null,
+  paused: false,
   playerVehicle: null,
   playerPos: () => player.getPos(),
   playerSpeed: () => player.getSpeed(),
@@ -132,13 +137,39 @@ if (save) {
 
 let timeScales = [1, 4, 16], tsIdx = 0;
 const ui = new UI({
-  onWeather: (name) => { env.autoWeather = false; env.setWeather(name); audio.click(); },
+  onWeather: (name) => {
+    env.autoWeather = false; env.setWeather(name); audio.click();
+    // la barre d'outils et le menu Météo restent synchronisés
+    settings.set('autoWeather', false); settings.set('weather', name);
+  },
   onTimeSkip: () => { env.advanceTime(3); audio.click(); },
   onTimeScale: () => { tsIdx = (tsIdx + 1) % timeScales.length; env.timeScale = timeScales[tsIdx]; return env.timeScale; },
   onSound: () => audio.toggleMute(),
   onShopOpen: (open) => { if (open) audio.click(); },
 });
 ctx.ui = ui;
+
+// ---------------------------- Réglages + menu --------------------------------
+// Les réglages sont appliqués AVANT le premier rendu (ombres, lumière, météo).
+const settings = new Settings();
+ctx.settings = settings;
+const menu = new MenuSystem(ctx, settings);
+ctx.menu = menu;
+settings.apply(ctx);
+settings.applyWorld(ctx);
+// le menu pilote aussi le mode Histoire / Libre
+menu._applyMode();
+if (settings.get('camView') === 'first') player.camMode = 'first';
+player.autoCam = settings.get('autoCam') !== false;
+player.gamepad.deadzone = settings.get('deadzone') ?? 0.18;
+Bus.on('settingsChanged', ({ key }) => {
+  if (key === 'mouseSens' || key === 'padSens' || key === '*') {
+    player.mouseSens = settings.get('mouseSens') ?? 1;
+    player.padSens = settings.get('padSens') ?? 1;
+  }
+  if (key === 'traffic' || key === 'peds' || key === 'autoWeather' || key === '*') settings.applyWorld(ctx);
+  if (key === 'gpsArrows' && ctx.gps) ctx.gps.showArrows = settings.get('gpsArrows') !== false;
+});
 
 traffic.init(ctx);
 syncGarage();
@@ -192,7 +223,12 @@ Bus.on('busted', () => {
   ui.showBusted(fine);
   setTimeout(() => { player.resetToSpawn(ctx); ctx.saveNow(); }, 1400);
 });
-Bus.on('exitVehicle', () => audio.engineOff());
+Bus.on('exitVehicle', () => {
+  audio.engineOff();
+  audio.setSkid(0);
+  traffic.playerVehicle = null;
+});
+Bus.on('enterVehicle', ({ vehicle }) => { traffic.playerVehicle = vehicle; });
 
 // --- garage : les véhicules achetés apparaissent réellement devant l'atelier ---
 const GARAGE = { x: 39.4, z: -112, heading: 0 };
@@ -241,11 +277,14 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'KeyB' && !e.repeat) { ui.toggleShop(ctx); }
   if (e.code === 'Escape' && ui.shopOpen) ui.closeShop();
 });
+document.getElementById('tb-settings')?.addEventListener('click', () => menu.toggle());
 
 // ------------------------------- Raccourcis ---------------------------------
 addEventListener('keydown', (e) => {
   if (!started) return;
-  if (e.code === 'KeyT') env.advanceTime(3);
+  if (ctx.paused) return;                  // menu ouvert : le jeu est figé
+  if (e.code === 'KeyR' && !e.repeat) player.recenterCamera();
+  else if (e.code === 'KeyT') env.advanceTime(3);
   else if (e.code === 'KeyG') { env.autoWeather = false; env.cycleWeather(); }
   else if (e.code === 'KeyL') {
     env.headlightOverride = env.headlightOverride === null ? true : env.headlightOverride === true ? false : null;
@@ -301,12 +340,18 @@ function loop() {
     }
   }
 
-  env.update(dt, ctx);
-  city.update(dt, ctx);
-  traffic.update(dt, ctx);
-  peds.update(dt, ctx);
+  // Le menu est toujours mis à jour (il doit pouvoir s'ouvrir), mais le monde
+  // est FIGÉ quand il est ouvert : c'est une vraie pause, pas un overlay.
+  menu.update(dt, ctx);
+  const simDt = ctx.paused ? 0 : dt;
+  env.update(simDt, ctx);
+  city.update(simDt, ctx);
+  if (!ctx.paused) {
+    traffic.update(dt, ctx);
+    peds.update(dt, ctx);
+  }
 
-  if (started) {
+  if (started && !ctx.paused) {
     player.update(dt, ctx);
     // accès toit : prioritaire quand on est devant un immeuble possédé
     if (!player.vehicle) {
@@ -339,7 +384,7 @@ function loop() {
         `LOD sim : <70m plein · <170m /4 · au-delà /24`);
     }
     if (ctx.gps) ctx.gps.hintT = (ctx.gps.hintT || 0) + dt;
-  } else {
+  } else if (!started) {
     titleCamera(t);
   }
 

@@ -33,14 +33,56 @@ npm start              # http://localhost:8000
 | `C` | Caméra automatique (suit la direction) / libre |
 | `B` · `Échap` | Boutique, garage, logements / fermer |
 | `E` | Monter au toit d'un immeuble acheté (et redescendre) |
-| 🎮 Manette | Stick gauche : se déplacer/conduire · droit : caméra · `X` entrer/sortir · `A` sauter/frein · `RB` sprint · `Y` klaxon |
+| `V` · `R` | Vue habitacle ↔ 3e personne · recentrer la caméra |
+| `Échap` | Menu : Graphismes · Contrôles · Manette · Spécial |
+| 🎮 Manette | `L3` sprint · `R3` recentrer · `BACK` vue · `START` / `D-Pad ↑` menu · `X` entrer/sortir · `A` frein à main |
 
 ## 🧪 Tests & build
 
 ```bash
 npm test        # 19 (simulation) + 42 (fonctionnalités) + 15 (intégration) + 112 (assets 3D)
+node tools/test_v04.mjs   # 24 vérifications propres à la v0.4
 npm run build   # régénère METROPOLIS.html (fichier unique, double-cliquable)
 ```
+
+## 🚨 v0.4 — poursuite, drift, GPS, caméra et menu
+
+- **Police qui poursuit vraiment** : les unités n'apparaissent plus « par magie »
+  devant le joueur. Le spawn cherche un nœud routier **derrière la caméra,
+  entre 100 et 240 m**, et la conduite utilise un **point d'interception**
+  (position future du joueur) pour couper la route — pas un simple suivi.
+  Un mur n'est plus un délit : heurter un bâtiment, un lampadaire ou une
+  bordure n'émet plus aucun crime.
+- **Textures au loin corrigées** : les bâtiments hors du cœur détaillé sont
+  désormais rendus avec de **vraies façades** en projection triplanaire
+  (`makeFacadeInstancedMaterial`), une seule texture par palette et un
+  InstancedMesh par palette. C'était la cause du « plus de textures quand on
+  s'éloigne du spawn » : ces chunks utilisaient un matériau blanc uni.
+- **Conducteur visible** dans tous les véhicules de trafic (silhouette assise
+  procédurale fusionnée : **1 draw call par voiture**, tête masquée en vue
+  habitacle) et **vitres transparentes** (découpe des triangles de verre par
+  échantillonnage de la palette, matériau `MeshPhysical`-like dédié).
+- **Drift** : le frein à main fait chuter l'adhérence latérale à 0,10 et
+  injecte un couple de lacet de survirage entretenu par la vitesse. Mesuré :
+  **angle de dérive > 8°**, **survirage > 25 %** par rapport au même virage
+  sans frein à main. **Crissement de pneus synthétisé** (bruit passe-bande
+  2,4 kHz + LFO) piloté par la glisse réelle, et **fumée de pneus** en pool fixe.
+- **GPS** : ruban bleu continu de 2,9 m de large au sol, **96 chevrons** couvrant
+  jusqu'à **900 m** (vérifié : > 150 m), et mini-carte style Google Maps
+  (liseré sombre + bleu vif + flèches). Le tracé n'est plus tronqué à 660 m.
+- **Vue habitacle** : caméra placée à la position réelle du conducteur
+  (à gauche du volant), FOV 74–82°, tête du conducteur masquée, retour 3e
+  personne progressif. `V` / `BACK` pour basculer, `R` / `R3` pour recentrer.
+- **Menu complet** (`Échap`, `START`, D-Pad ↑ ou bouton ⚙️) : Graphismes
+  (ombres, lumière, mode RTX, météo, densité de trafic/piétons), Contrôles,
+  Manette (zone morte, sensibilité, vibrations) et Spécial (debug, argent,
+  garage, sauvegarde). **Icônes Reicon** (npm, hors-ligne) rendues en SVG inline.
+- **Modes Histoire / Libre** : en Libre, les livraisons s'arrêtent, on pose une
+  destination d'un clic sur la mini-carte, et la météo est librement réglable.
+- **Honnêteté sur le « RTX »** : WebGL n'expose pas le ray tracing matériel.
+  Le mode RTX est une approximation assumée (reflets PBR renforcés ×1,75,
+  ombres plus douces, exposition relevée), documentée comme telle dans le menu.
+
 
 ## 🎨 Textures HD & animations (v0.3.1)
 
@@ -56,6 +98,7 @@ npm run build   # régénère METROPOLIS.html (fichier unique, double-cliquable)
   glissement de pieds. Transition continue, sans à-coup.
 
 Détails techniques et mesures : [`docs/04_TEXTURES_ET_ANIMATIONS_HD.md`](docs/04_TEXTURES_ET_ANIMATIONS_HD.md)
+Réglages, menus et rendu v0.4 : [`docs/06_REGLAGES_RENDU_ET_MENUS_v0.4.md`](docs/06_REGLAGES_RENDU_ET_MENUS_v0.4.md)
 et budget mémoire dans [`docs/03`](docs/03_RISQUES_ET_PERFORMANCE.md).
 
 | Aperçu | Fichier |
