@@ -59,15 +59,16 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           TAG="v0.1.0"
-          gh release view "$TAG" --repo "$REPO" > /dev/null 2>&1 || \
+          NOTES="Executable Windows portable (x64), sans installation."
+          NOTES="$NOTES Double-cliquez : le jeu demarre dans sa propre fenetre (F11 plein ecran)."
+          NOTES="$NOTES Contenu : quartier vivant, trafic IA avec feux, PNJ a routines,"
+          NOTES="$NOTES 7 vehicules conduisibles, police et poursuites, missions de livraison,"
+          NOTES="$NOTES cycle jour/nuit, meteo a effets gameplay, sauvegarde automatique."
+          NOTES="$NOTES 100% hors-ligne, aucune installation, aucun droit administrateur."
+          if ! gh release view "$TAG" --repo "$REPO" > /dev/null 2>&1; then
             gh release create "$TAG" --repo "$REPO" \
-              --title "METROPOLIS v0.1.0 — vertical slice jouable" \
-              --notes "Executable Windows portable (x64), sans installation.
-
-Double-cliquez : le jeu demarre dans sa propre fenetre (F11 plein ecran).
-
-Contenu : quartier vivant, trafic IA avec feux, PNJ a routines, 7 vehicules conduisibles, police et poursuites, missions de livraison, cycle jour/nuit, meteo a effets gameplay, sauvegarde automatique.
-
-Le jeu tourne 100% hors-ligne. Aucune installation, aucun droit administrateur."
+              --title "METROPOLIS v0.1.0 - vertical slice jouable" \
+              --notes "$NOTES"
+          fi
           gh release upload "$TAG" desktop/release/*.exe --repo "$REPO" --clobber
           echo "Release : https://github.com/$REPO/releases/tag/$TAG"
