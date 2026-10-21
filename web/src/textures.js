@@ -319,12 +319,178 @@ export function facade(paletteName, band = 'mid', variant = 0) {
     d.fillStyle = g2; d.fillRect(x, K.r() * S * 0.6, w, h);
   }
 
+  // RepeatWrapping vertical : indispensable depuis que les UV des façades sont
+  // exprimées en MÈTRES (une tuile = un nombre entier d'étages). Avec
+  // ClampToEdge, un immeuble de 40 m n'affichait qu'une fraction de texture :
+  // les fenêtres étaient étirées — c'était le « textures tordues » signalé.
   const out = {
-    day: texture(dayC, { aniso: 16, wrapT: THREE.ClampToEdgeWrapping }),
-    night: texture(nightC, { aniso: 4, wrapT: THREE.ClampToEdgeWrapping }),
+    day: texture(dayC, { aniso: 16, wrapT: THREE.RepeatWrapping }),
+    night: texture(nightC, { aniso: 4, wrapT: THREE.RepeatWrapping }),
     bump: bumpFrom(d, S, 256, 2.0),
-    // répétition recommandée : une tuile de façade ≈ 16 m de large
+    // une tuile de façade couvre 16 m de large × (rows × 3 m) de haut
     tileMeters: 16,
+    tileHeight: cfg.rows * 3,
+  };
+  cache.set(key, out);
+  return out;
+}
+
+/**
+ * Tuile de façade TUILABLE dans les deux sens (v0.6).
+ *
+ * Pourquoi une seconde génération : la texture de `facade()` contient une
+ * devanture de magasin, une corniche et une plinthe. Avec des UV exprimés en
+ * mètres (obligatoire pour que les fenêtres ne soient pas étirées), cette
+ * texture se répète verticalement : on voyait donc une vitrine de boutique
+ * tous les 18 m au milieu des tours, et une corniche à chaque étage.
+ *
+ * `facadeTiling()` ne contient QUE des étages réguliers, sans bord haut/bas :
+ * la répétition verticale est invisible. Les rez-de-chaussée commerçants sont
+ * rendus à part par `shopfront()` sur un podium de 4 m (cf. city.js).
+ *
+ * @returns {{day: THREE.Texture, night: THREE.Texture, bump: THREE.Texture,
+ *            tileMeters: number, tileHeight: number}}
+ */
+export function facadeTiling(paletteName, band = 'mid', variant = 0) {
+  const key = `tile:${paletteName}:${band}:${variant}`;
+  if (cache.has(key)) return cache.get(key);
+
+  const pal = PALETTES[paletteName] || PALETTES.plaster;
+  const cfg = BANDS[band] || BANDS.mid;
+  const S = cfg.size, R = cfg.rows;
+  const K = rngKit(0x51ed270b ^ (paletteName.length * 7919) ^ (R * 131) ^ (variant * 2654435761));
+
+  const dayC = makeCanvas(S), nightC = makeCanvas(TEX.NIGHT);
+  const d = dayC.getContext('2d'), n = nightC.getContext('2d');
+  const nS = TEX.NIGHT, px = S / TEX.FACADE;
+
+  // Mur uni : un dégradé vertical créerait une couture à chaque répétition.
+  d.fillStyle = pal.wall; d.fillRect(0, 0, S, S);
+  n.fillStyle = '#000'; n.fillRect(0, 0, nS, nS);
+
+  const rows = R, ch = S / rows;
+  const cols = pal.glassy ? 5 : 6, cw = S / cols;
+  const residential = paletteName === 'house' || paletteName === 'brick'
+    || paletteName === 'plaster' || paletteName === 'oldbrick';
+
+  // Trame de panneaux : lignes alignées sur les étages (donc périodiques).
+  for (let r = 0; r < rows; r++) {
+    const y = r * ch;
+    d.fillStyle = 'rgba(0,0,0,0.10)'; d.fillRect(0, y, S, Math.max(1, 2 * px));
+    d.fillStyle = 'rgba(255,255,255,0.05)'; d.fillRect(0, y + Math.max(1, 2 * px), S, Math.max(1, 1.5 * px));
+    // joints verticaux décalés d'une rangée sur l'autre (appareil de briques)
+    const off = (r % 2) * (cw / 2);
+    for (let x = off; x < S; x += cw) {
+      d.fillStyle = 'rgba(0,0,0,0.07)'; d.fillRect(x, y, Math.max(1, 1.5 * px), ch);
+    }
+  }
+  if (pal.brick) {
+    for (let y = 0; y < S; y += Math.max(2, ch / 3)) {
+      d.fillStyle = 'rgba(0,0,0,0.07)'; d.fillRect(0, y, S, Math.max(1, 1.2 * px));
+    }
+  }
+
+  // Grain + taches d'humidité (périodique : aucun bord privilégié).
+  for (let i = 0; i < Math.round(3200 * px * px); i++) {
+    const a = K.range(0.02, 0.05);
+    d.fillStyle = K.r() < 0.5 ? `rgba(0,0,0,${a})` : `rgba(255,255,255,${a})`;
+    d.fillRect(K.r() * S, K.r() * S, K.range(1, 2.5) * px, K.range(1, 2.5) * px);
+  }
+  for (let i = 0; i < 18; i++) {
+    d.fillStyle = `rgba(${K.int(20, 70)},${K.int(20, 70)},${K.int(20, 70)},0.05)`;
+    d.beginPath();
+    d.ellipse(K.r() * S, K.r() * S, K.range(30, 130) * px, K.range(20, 90) * px, K.r() * 3, 0, 6.283);
+    d.fill();
+  }
+
+  // Fenêtres : AUCUN rez-de-chaussée spécial, c'est ce qui rend la tuile
+  // uniforme sur toute la hauteur du bâtiment.
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const cellX = c * cw;
+      const wRatio = pal.glassy ? 0.86 : K.range(0.44, 0.54);
+      const hRatio = pal.glassy ? 0.80 : K.range(0.50, 0.62);
+      const ww = cw * wRatio, wh = ch * hRatio;
+      const x = cellX + (cw - ww) / 2;
+      const y = r * ch + (ch - wh) / 2;
+      drawWindow(d, n, S, nS, x, y, ww, wh, pal, K, px, { residential, row: r });
+    }
+  }
+
+  const out = {
+    day: texture(dayC, { aniso: 16, wrapT: THREE.RepeatWrapping }),
+    night: texture(nightC, { aniso: 8, wrapT: THREE.RepeatWrapping }),
+    bump: bumpFrom(d, S, 256, 1.8),
+    tileMeters: 16,
+    tileHeight: rows * 3,
+  };
+  cache.set(key, out);
+  return out;
+}
+
+/**
+ * Bandeau de rez-de-chaussée commerçant (podium 4 m), 512×128.
+ * 4 vitrines par tuile, auvents colorés, enseigne, lueur chaude la nuit.
+ * Utilisé par l'InstancedMesh `podium` de city.js : un seul draw call pour
+ * toutes les boutiques de la ville.
+ */
+export function shopfront(variant = 0) {
+  const key = `shopfront:${variant}`;
+  if (cache.has(key)) return cache.get(key);
+  const W = 512, H = 128;
+  const K = rngKit(0x2545f491 ^ (variant * 2246822519));
+  const dayC = makeCanvas(W, H), nightC = makeCanvas(W, H);
+  const d = dayC.getContext('2d'), n = nightC.getContext('2d');
+
+  d.fillStyle = '#2a2d33'; d.fillRect(0, 0, W, H);
+  n.fillStyle = '#000'; n.fillRect(0, 0, W, H);
+
+  const shops = 4, sw = W / shops;
+  const awnings = ['#b8302f', '#1f5f8b', '#2f7d4f', '#c28b1f', '#6b3f8f'];
+  for (let i = 0; i < shops; i++) {
+    const x = i * sw;
+    // encadrement
+    d.fillStyle = '#4a4e55'; d.fillRect(x + 2, 8, sw - 4, H - 16);
+    // vitrine
+    const gx = x + 10, gy = 34, gw = sw - 20, gh = H - 44;
+    const g = d.createLinearGradient(gx, gy, gx + gw * 0.4, gy + gh);
+    g.addColorStop(0, '#cfe6f5'); g.addColorStop(0.5, '#5d7d94'); g.addColorStop(1, '#1f2a33');
+    d.fillStyle = g; d.fillRect(gx, gy, gw, gh);
+    // reflet diagonal
+    d.save(); d.beginPath(); d.rect(gx, gy, gw, gh); d.clip();
+    d.globalAlpha = 0.28; d.fillStyle = '#ffffff';
+    d.beginPath(); d.moveTo(gx, gy + gh * 0.9); d.lineTo(gx + gw * 0.55, gy);
+    d.lineTo(gx + gw * 0.85, gy); d.lineTo(gx + gw * 0.3, gy + gh); d.closePath(); d.fill();
+    d.globalAlpha = 1; d.restore();
+    // auvent
+    const ac = awnings[(i + variant) % awnings.length];
+    d.fillStyle = ac; d.fillRect(x + 6, 18, sw - 12, 16);
+    for (let k = 0; k < 8; k++) {
+      d.fillStyle = k % 2 ? 'rgba(255,255,255,0.82)' : 'rgba(0,0,0,0.10)';
+      d.fillRect(x + 6 + k * ((sw - 12) / 8), 18, (sw - 12) / 16, 16);
+    }
+    // enseigne au-dessus de la vitrine
+    d.fillStyle = '#16181c'; d.fillRect(x + 10, 8, sw - 20, 8);
+    // montants
+    d.fillStyle = '#2b2f35'; d.fillRect(gx + gw * 0.5 - 2, gy, 4, gh);
+    // seuil
+    d.fillStyle = '#6b7079'; d.fillRect(x + 6, H - 10, sw - 12, 6);
+    // porte (une boutique sur deux)
+    if (i % 2 === 0) {
+      d.fillStyle = '#1a2028'; d.fillRect(x + sw - 46, gy + gh * 0.35, 26, gh * 0.65);
+      d.fillStyle = '#8a939e'; d.fillRect(x + sw - 30, gy + gh * 0.6, 3, 3);
+    }
+    // lumière de la boutique la nuit
+    const warm = K.pick(['#ffd79a', '#ffe9c4', '#ffc36b']);
+    n.fillStyle = warm; n.globalAlpha = 0.85; n.fillRect(x + 10, 34, sw - 20, H - 44); n.globalAlpha = 1;
+    n.fillStyle = '#000'; n.globalAlpha = 0.35;
+    n.fillRect(gx + gw * 0.5 - 2, gy, 4, gh);
+    n.globalAlpha = 1;
+  }
+
+  const out = {
+    day: texture(dayC, { aniso: 8 }),
+    night: texture(nightC, { aniso: 4 }),
   };
   cache.set(key, out);
   return out;

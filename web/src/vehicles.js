@@ -97,8 +97,139 @@ function buildDriverFigure() {
 }
 
 // ------------------------- Construction du mesh ----------------------------
+/**
+ * Figure de pilote (moto) — buste penché vers l'avant, casque, mains sur le
+ * guidon, jambes repliées sur les repose-pieds. Même principe que le
+ * conducteur de voiture : une seule géométrie fusionnée, matériau à couleurs
+ * de sommets, donc 1 draw call.
+ *
+ * Pourquoi c'est important : en v0.5 les motos n'avaient AUCUN pilote (ni pour
+ * l'IA, ni pour le joueur), et le corps du joueur était masqué à la montée :
+ * on « disparaissait » sur une moto vide.
+ */
+function buildRiderFigure() {
+  const parts = [];
+  const JACKET = new THREE.Color(0x2d3a4a), PANTS = new THREE.Color(0x22262c);
+  const SKIN = new THREE.Color(0xc98f6b), HELMET = new THREE.Color(0x1b1e24), VISOR = new THREE.Color(0x3a4a5c);
+  const add = (geo, col, x = 0, y = 0, z = 0, rx = 0, rz = 0) => {
+    geo.applyMatrix4(new THREE.Matrix4().makeRotationX(rx));
+    if (rz) geo.applyMatrix4(new THREE.Matrix4().makeRotationZ(rz));
+    geo.translate(x, y, z);
+    const n = geo.attributes.position.count;
+    const c = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) { c[i * 3] = col.r; c[i * 3 + 1] = col.g; c[i * 3 + 2] = col.b; }
+    geo.setAttribute('color', new THREE.BufferAttribute(c, 3));
+    if (!geo.attributes.normal) geo.computeVertexNormals();
+    parts.push(geo);
+  };
+  const cyl = (rt, rb, h, seg = 7) => new THREE.CylinderGeometry(rt, rb, h, seg);
+  // bassin + buste penché (angle ~35°)
+  add(new THREE.BoxGeometry(0.34, 0.22, 0.30), PANTS, 0, 0.86, -0.16);
+  add(new THREE.BoxGeometry(0.36, 0.46, 0.26), JACKET, 0, 1.06, 0.02, -0.55);
+  // tête + casque + visière
+  add(new THREE.SphereGeometry(0.115, 10, 8), SKIN, 0, 1.30, 0.22);
+  add(new THREE.SphereGeometry(0.135, 12, 9), HELMET, 0, 1.33, 0.21);
+  add(new THREE.SphereGeometry(0.105, 10, 6), VISOR, 0, 1.33, 0.31);
+  // bras vers le guidon
+  for (const sx of [-1, 1]) {
+    add(cyl(0.045, 0.05, 0.46), JACKET, sx * 0.19, 1.12, 0.34, -1.15);
+    add(new THREE.SphereGeometry(0.05, 6, 5), SKIN, sx * 0.19, 1.00, 0.53);
+  }
+  // jambes repliées (genou en avant, pied en arrière)
+  for (const sx of [-1, 1]) {
+    add(cyl(0.075, 0.085, 0.42), PANTS, sx * 0.17, 0.86, -0.02, -1.35);
+    add(cyl(0.065, 0.055, 0.38), PANTS, sx * 0.20, 0.60, -0.22, 0.35);
+    add(new THREE.BoxGeometry(0.10, 0.07, 0.24), HELMET, sx * 0.20, 0.42, -0.30);
+  }
+  let total = 0, totalIdx = 0;
+  for (const g of parts) { total += g.attributes.position.count; totalIdx += g.index ? g.index.count : g.attributes.position.count; }
+  const pos = new Float32Array(total * 3), nor = new Float32Array(total * 3), col = new Float32Array(total * 3);
+  const index = new Uint32Array(totalIdx);
+  let vo = 0, io = 0;
+  for (const g of parts) {
+    const p = g.attributes.position, n = g.attributes.normal, c = g.attributes.color;
+    pos.set(p.array, vo * 3); nor.set(n.array, vo * 3); col.set(c.array, vo * 3);
+    const src = g.index ? g.index.array : null;
+    const cnt = src ? src.length : p.count;
+    for (let i = 0; i < cnt; i++) index[io + i] = (src ? src[i] : i) + vo;
+    vo += p.count; io += cnt;
+    g.dispose();
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  geo.setIndex(new THREE.BufferAttribute(index, 1));
+  const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.72, metalness: 0.08 }));
+  mesh.name = 'rider';
+  mesh.castShadow = true;
+  return mesh;
+}
+
+/** Moto : cadre, réservoir, selle, fourche, guidon, échappement, 2 roues + pilote. */
+function buildMotoMesh(t) {
+  const color = pick(t.colors);
+  const g = new THREE.Group();
+  const paint = new THREE.MeshPhysicalMaterial({
+    color, roughness: 0.26, metalness: 0.55, clearcoat: 1, clearcoatRoughness: 0.06,
+    envMapIntensity: 1.25 * MAT_BOOST,
+  });
+  const chrome = new THREE.MeshStandardMaterial({ color: 0xbfc4cc, roughness: 0.28, metalness: 0.95 });
+  const darkMat = new THREE.MeshStandardMaterial({ color: 0x191c21, roughness: 0.55, metalness: 0.3 });
+  const wheelR = 0.32;
+  const wheels = [], frontPivots = [];
+  const wheelGeo = new THREE.CylinderGeometry(wheelR, wheelR, 0.14, 16);
+  const tireMatLocal = new THREE.MeshStandardMaterial({ color: 0x121317, roughness: 0.92 });
+  const rimGeo = new THREE.CylinderGeometry(wheelR * 0.62, wheelR * 0.62, 0.15, 12);
+  for (const [sz, front] of [[1, true], [-1, false]]) {
+    const pivot = new THREE.Group();
+    pivot.position.set(0, wheelR, sz * 0.74);
+    const wheel = new THREE.Mesh(wheelGeo, tireMatLocal);
+    wheel.rotation.z = Math.PI / 2; wheel.castShadow = true;
+    const rim = new THREE.Mesh(rimGeo, chrome); rim.rotation.z = Math.PI / 2; wheel.add(rim);
+    pivot.add(wheel); g.add(pivot); wheels.push(wheel);
+    if (front) frontPivots.push(pivot);
+  }
+  // cadre + moteur
+  const frame = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 1.02), darkMat);
+  frame.position.set(0, 0.52, 0); g.add(frame);
+  const engine = new THREE.Mesh(new THREE.BoxGeometry(0.30, 0.26, 0.34), chrome);
+  engine.position.set(0, 0.44, 0.02); g.add(engine);
+  // réservoir + selle
+  const tank = new THREE.Mesh(new THREE.SphereGeometry(0.20, 12, 10), paint);
+  tank.scale.set(1, 0.85, 1.5); tank.position.set(0, 0.80, 0.20); g.add(tank);
+  const seat = new THREE.Mesh(new THREE.BoxGeometry(0.30, 0.11, 0.52), darkMat);
+  seat.position.set(0, 0.84, -0.28); g.add(seat);
+  // fourche + guidon
+  for (const sx of [-1, 1]) {
+    const fork = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.026, 0.62, 8), chrome);
+    fork.position.set(sx * 0.09, 0.62, 0.62); fork.rotation.x = -0.32; g.add(fork);
+  }
+  const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.62, 8), darkMat);
+  bar.rotation.z = Math.PI / 2; bar.position.set(0, 1.00, 0.55); g.add(bar);
+  // échappement
+  const exhaust = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.065, 0.9, 10), chrome);
+  exhaust.rotation.x = Math.PI / 2; exhaust.position.set(0.16, 0.36, -0.30); g.add(exhaust);
+  // phare + feu arrière
+  const headMat = new THREE.MeshStandardMaterial({ color: 0xfff6d8, emissive: 0xffedb5, emissiveIntensity: 0.25 });
+  const brakeMat = new THREE.MeshStandardMaterial({ color: 0x550000, emissive: 0xff1a1a, emissiveIntensity: 0.35 });
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.11, 10, 8), headMat);
+  head.position.set(0, 0.92, 0.66); g.add(head);
+  const brake = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.07, 0.05), brakeMat);
+  brake.position.set(0, 0.80, -0.56); g.add(brake);
+  // pilote
+  const driverFig = buildRiderFigure();
+  driverFig.position.set(0, 0.02, -0.02);
+  g.add(driverFig);
+  // halo de phare au sol
+  const glow = new THREE.Mesh(new THREE.PlaneGeometry(1.9, 7), headlightGlowMat);
+  glow.rotation.x = -Math.PI / 2; glow.position.set(0, 0.06, 4.0); g.add(glow);
+  return { group: g, wheels, frontPivots, headMat, brakeMat, beacon: null, wheelR, paint, driverFig, glass: null, isMoto: true };
+}
+
 function buildVehicleMesh(typeName) {
   const t = VEHICLE_TYPES[typeName];
+  if (t.moto) return buildMotoMesh(t);
   const color = pick(t.colors);
   const g = new THREE.Group();
   // Peinture automobile : clair métallisé + vernis (clearcoat). C'est ce qui
@@ -216,7 +347,7 @@ function buildVehicleMesh(typeName) {
   // Gyrophares police
   let beacon = null;
   if (t.police) {
-    beacon = { mats: [], light: null };
+    beacon = { mats: [], light: null }; // light reste null : voir ci-dessous
     const bar = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.09, 0.4), new THREE.MeshStandardMaterial({ color: 0x222 }));
     bar.position.set(0, roofY + 0.10, -t.len * 0.04); g.add(bar);
     for (const [sx, col] of [[-1, 0x2255ff], [1, 0xff2222]]) {
@@ -225,8 +356,10 @@ function buildVehicleMesh(typeName) {
       b.position.set(sx * 0.29, bar.position.y + 0.13, bar.position.z); g.add(b);
       beacon.mats.push(m);
     }
-    beacon.light = new THREE.PointLight(0x4466ff, 0, 26, 1.8);
-    beacon.light.position.set(0, bar.position.y + 0.7, 0); g.add(beacon.light);
+    // Pas de PointLight : en ajouter une à l'exécution change le nombre de
+    // lumières de la scène, ce qui force three.js à recompiler TOUS les
+    // shaders (freeze d'une seconde au moment où la police apparaît). Un
+    // gyrophare émissif + le halo additif suffisent visuellement.
   }
   return { group: g, wheels, frontPivots, headMat, brakeMat, beacon, wheelR, paint, driverFig, glass: model?.glass || null };
 }
@@ -333,7 +466,8 @@ export class Vehicle {
     this._crashCd = 0;
     this.radius = this.spec.len * 0.42;
     this.beaconOn = false; this._beaconT = rand() * 10;
-    this.spotLights = null;
+    this.headlightsOn = false;
+    this._softCd = 0;         // anti-répétition du choc « arbre »
   }
   forward() { return { x: Math.sin(this.heading), z: Math.cos(this.heading) }; }
   speedKmh() { return Math.abs(this.vf) * 3.6; }
@@ -342,20 +476,22 @@ export class Vehicle {
     this.vel.x = this.vel.z = 0; this.vf = 0;
     this.group.rotation.y = heading;
   }
+  /**
+   * v0.6 : ne crée PLUS de SpotLight ici.
+   *
+   * Ajouter une lumière à la scène à l'exécution modifie le nombre de lumières
+   * du programme : three.js recompile alors tous les matériaux de la scène et
+   * le jeu se fige ~0,5–1 s au moment exact où l'on monte dans un véhicule.
+   * Les deux projecteurs du joueur sont désormais créés UNE fois au démarrage
+   * par TrafficSystem (this.headRig) et simplement déplacés chaque frame.
+   */
   attachPlayerLights() {
-    if (this.spotLights) return;
-    this.spotLights = [];
-    for (const sx of [-1, 1]) {
-      const sp = new THREE.SpotLight(0xffeec2, 0, 55, 0.5, 0.45, 1.2);
-      sp.position.set(sx * this.spec.wid * 0.33, 0.85, this.spec.len / 2);
-      sp.target.position.set(sx * this.spec.wid * 0.4, 0, this.spec.len / 2 + 18);
-      this.group.add(sp, sp.target); this.spotLights.push(sp);
-    }
+    this.headlightsOn = true;
   }
   setHeadlights(on, braking) {
+    this.headlightsOn = !!on;
     this.headMat.emissiveIntensity = on ? 3.2 : 0.25;
     this.brakeMat.emissiveIntensity = braking ? 3.4 : (on ? 1.0 : 0.35);
-    if (this.spotLights) for (const s of this.spotLights) s.intensity = on ? 60 : 0;
   }
 
   update(dt, ctx) {
@@ -429,17 +565,32 @@ export class Vehicle {
 
     // Collisions bâtiments : 2 cercles (avant / arrière)
     const cr = spec.wid * 0.52, off = spec.len * 0.3;
-    let pushed = 0;
+    let pushed = 0, hardHit = false, softHit = false;
     for (const s of [1, -1]) {
       const cxp = this.pos.x + nf.x * off * s, czp = this.pos.z + nf.z * off * s;
       const c = ctx.city.collide(cxp, czp, cr);
       const dx = c.x - cxp, dz = c.z - czp;
-      if (dx || dz) { this.pos.x += dx; this.pos.z += dz; pushed = Math.max(pushed, Math.hypot(dx, dz)); }
+      if (dx || dz) {
+        this.pos.x += dx; this.pos.z += dz;
+        pushed = Math.max(pushed, Math.hypot(dx, dz));
+        if (c.soft) softHit = true; else hardHit = true;
+      }
     }
+    this._softCd = Math.max(0, this._softCd - dt);
     if (pushed > 0.02) {
       const impact = Math.abs(this.vf);
-      this.vel.x *= 0.35; this.vel.z *= 0.35; this.vf *= 0.35;
-      if (impact > 5 && this._crashCd <= 0) {
+      // Un arbre (collider 'soft') n'est pas un mur : on garde 78 % de la
+      // vitesse au lieu des 35 % d'un impact béton — MAIS une seule fois par
+      // contact. Sans ce délai, le chevauchement reste vrai plusieurs frames
+      // et 0,78^6 ≈ 0,22 : l'arbre finissait par arrêter la voiture.
+      if (hardHit) {
+        this.vel.x *= 0.35; this.vel.z *= 0.35; this.vf *= 0.35;
+      } else if (this._softCd <= 0) {
+        this.vel.x *= 0.78; this.vel.z *= 0.78; this.vf *= 0.78;
+        this._softCd = 0.30;
+        Bus.emit('bush', { pos: { x: this.pos.x, z: this.pos.z }, speed: impact });
+      }
+      if (hardHit && impact > 5 && this._crashCd <= 0) {
         this._crashCd = 0.8;
         this.damage = clamp(this.damage + impact * 0.012, 0, 1);
         Bus.emit('crash', { pos: { x: this.pos.x, z: this.pos.z }, speed: impact, vehicle: this });
@@ -465,10 +616,8 @@ export class Vehicle {
       this._beaconT += dt * 7;
       const ph = Math.sin(this._beaconT) > 0;
       const on = this.beaconOn;
-      this.beacon.mats[0].emissiveIntensity = on && ph ? 4 : 0;
-      this.beacon.mats[1].emissiveIntensity = on && !ph ? 4 : 0;
-      this.beacon.light.intensity = on ? 14 : 0;
-      this.beacon.light.color.setHex(ph ? 0x3355ff : 0xff3333);
+      this.beacon.mats[0].emissiveIntensity = on && ph ? 5 : 0;
+      this.beacon.mats[1].emissiveIntensity = on && !ph ? 5 : 0;
     }
   }
 }
@@ -682,6 +831,17 @@ export class TrafficSystem {
     this.smoke = new TireSmoke(scene);
     this.playerVehicle = null;    // renseigné par main.js pour les effets
     this.highway = [];            // trafic de l'anneau autoroutier
+    // Projecteurs du joueur créés UNE fois (compteur de lumières constant).
+    this.headRig = [];
+    for (const sx of [-1, 1]) {
+      const sp = new THREE.SpotLight(0xffeec2, 0, 58, 0.52, 0.5, 1.25);
+      sp.castShadow = false;
+      const target = new THREE.Object3D();
+      sp.target = target;
+      target.position.set(0, 0, 1);
+      scene.add(sp, target);
+      this.headRig.push({ sp, target, sx });
+    }
     Bus.on('crime', ({ severity }) => this.addHeat(severity));
   }
 
@@ -743,7 +903,7 @@ export class TrafficSystem {
       if (!v.owned) continue;
       this.scene.remove(v.group);
       v.active = false;
-      if (v.spotLights) for (const l of v.spotLights) this.scene.remove(l);
+
     }
     this.vehicles = this.vehicles.filter((v) => !v.owned);
   }
@@ -821,13 +981,15 @@ export class TrafficSystem {
     v.driver = 'player';
     v.inputs.throttle = 0; v.inputs.steer = 0;
     v.attachPlayerLights();
+    this.playerVehicle = v;
     if (wasDriven) Bus.emit('crime', { severity: 2, pos: v.pos }); // vol de véhicule
   }
   playerLeaveVehicle(v) {
+    if (this.playerVehicle === v) this.playerVehicle = null;
     v.driver = null; v.parked = true;
     v.inputs.throttle = 0; v.inputs.steer = 0; v.inputs.brake = true;
     v.vel.x = v.vel.z = 0; v.vf = 0;
-    if (v.spotLights) for (const s of v.spotLights) s.intensity = 0;
+    v.headlightsOn = false;
   }
 
   // ------------------------------- Police ----------------------------------
@@ -993,7 +1155,29 @@ export class TrafficSystem {
     }
     this.resolveVehicleCollisions(ctx);
     this.updatePolice(dt, ctx);
+    this._updateHeadRig();
     this._driftFx(dt, ctx);
+  }
+
+  /**
+   * Positionne les deux projecteurs du joueur sur son véhicule. Aucune
+   * création d'objet ici : uniquement des affectations, donc zéro
+   * recompilation de shader et zéro allocation.
+   */
+  _updateHeadRig() {
+    const v = this.playerVehicle;
+    const on = !!(v && v.driver === 'player' && v.headlightsOn);
+    for (const { sp, target, sx } of this.headRig) {
+      if (!on) { sp.intensity = 0; continue; }
+      const f = v.forward();
+      const rx = f.z, rz = -f.x;                  // vecteur droite
+      const ox = v.pos.x - rx * sx * v.spec.wid * 0.33;
+      const oz = v.pos.z - rz * sx * v.spec.wid * 0.33;
+      sp.position.set(ox, 0.92, oz);
+      target.position.set(ox + f.x * 24 + rx * sx * 2.4, 0.05, oz + f.z * 24 + rz * sx * 2.4);
+      sp.intensity = 52;
+      sp.target.updateMatrixWorld();
+    }
   }
 
   /**

@@ -95,6 +95,11 @@ async function main() {
     { name: 'facade_house',   fn: () => tex.facade('house', 'low', 0).day },
     { name: 'facade_plaster', fn: () => tex.facade('plaster', 'mid', 1).day },
     { name: 'face_night',     fn: () => tex.facade('brick', 'mid', 0).night },
+    // v0.6 : tuile d'étages répétable (utilisée par les immeubles >= 10 m)
+    { name: 'facade_tile_glass',  fn: () => tex.facadeTiling('glass', 'high', 0).day },
+    { name: 'facade_tile_office', fn: () => tex.facadeTiling('office', 'mid', 1).day },
+    { name: 'facade_tile_brick',  fn: () => tex.facadeTiling('brick', 'mid', 0).day },
+    { name: 'shopfront',          fn: () => tex.shopfront(0).day },
     { name: 'asphalt',        fn: () => unwrap(tex.asphaltHD()) },
     { name: 'sidewalk',       fn: () => unwrap(tex.sidewalkHD()) },
     { name: 'grass',          fn: () => unwrap(tex.grassHD()) },

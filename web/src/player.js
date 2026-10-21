@@ -173,6 +173,14 @@ export class Player {
 
   // -------------------------------- Update ---------------------------------
   update(dt, ctx) {
+    // --- saut : buffer d'appui + coyote time -------------------------------
+    // Un appui de 16 ms peut tomber une frame où `grounded` est faux (marche
+    // d'escalier, trottoir). On garde donc l'intention 0,16 s et on autorise
+    // le saut 0,12 s après avoir quitté le sol : plus aucune pression perdue.
+    if (this._jumpBufferT === undefined) { this._jumpBufferT = 0; this._coyoteT = 0; }
+    this._jumpBufferT = Math.max(0, this._jumpBufferT - dt);
+    this._coyoteT = this.grounded ? 0.12 : Math.max(0, this._coyoteT - dt);
+
     // --- entrées manette (hot-plug, axes analogiques, boutons) ---
     const pad = this.gamepad;
     pad.poll();
@@ -185,9 +193,16 @@ export class Player {
       // L3 = verrou de sprint (appuyer une fois court, appuyer à nouveau
       // arrête). Sur un clic de stick, le maintien est trop pénible.
       if (pad.pressed('L3')) {
-        this._l3Latch = !this._l3Latch;
-        Bus.emit('toast', { text: this._l3Latch ? '🏃 Sprint activé (L3)' : '🚶 Sprint désactivé', kind: '' });
+        if (this.vehicle) {
+          // En véhicule, le sprint n'a pas de sens : L3 sert de regard arrière
+          // (maintenu) et le signale dans le HUD.
+          Bus.emit('toast', { text: '👀 Regard arrière (maintenir L3)', kind: '' });
+        } else {
+          this._l3Latch = !this._l3Latch;
+          Bus.emit('toast', { text: this._l3Latch ? '🏃 Sprint activé (L3)' : '🚶 Sprint désactivé', kind: '' });
+        }
       }
+      this._lookBack = !!this.vehicle && pad.down('L3');
       if (Math.abs(pad.lookX) > 0 || Math.abs(pad.lookY) > 0) {
         const ps = this.padSens ?? 1;
         this.camYaw -= pad.lookX * 2.6 * dt * ps;
@@ -240,9 +255,16 @@ export class Player {
       this.vel.x = damp(this.vel.x, 0, 10, dt);
       this.vel.z = damp(this.vel.z, 0, 10, dt);
     }
-    // saut + gravité
+    // saut + gravité (buffer 0,16 s : l'appui n'est jamais perdu)
+    if (this.key('Space') || this.gamepad.pressed('A')) this._jumpBufferT = 0.16;
     const ground = ctx.city.groundY(this.pos.x, this.pos.z, this.pos.y);
-    if ((this.key('Space') || this.gamepad.pressed('A')) && this.grounded) { this.vy = 7.4; this.grounded = false; }
+    if (this._jumpBufferT > 0 && this._coyoteT > 0) {
+      this.vy = 7.6;
+      this.grounded = false;
+      this._jumpBufferT = 0;
+      this._coyoteT = 0;
+      this._jumpFx = 0.18;              // petite impulsion visuelle (caméra)
+    }
     this.vy -= 22 * dt;
     this.pos.x += this.vel.x * dt;
     this.pos.z += this.vel.z * dt;
@@ -403,7 +425,15 @@ export class Player {
       const f = this.vehicle.forward();
       target.x += f.x * 3.2; target.z += f.z * 3.2;
     }
-    this.camera.lookAt(target);
+    if (this._lookBack) {
+      // vue arrière : la caméra se place devant le véhicule et regarde derrière
+      const v = this.vehicle;
+      const f = v.forward();
+      this.camera.position.set(v.pos.x + f.x * 9, 2.4, v.pos.z + f.z * 9);
+      this.camera.lookAt(v.pos.x - f.x * 10, 1.4, v.pos.z - f.z * 10);
+    } else {
+      this.camera.lookAt(target);
+    }
     if (Math.abs(this.camera.fov - fov) > 0.1) {
       this.camera.fov = damp(this.camera.fov, fov, 4, dt);
       this.camera.updateProjectionMatrix();

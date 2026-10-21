@@ -7,7 +7,7 @@
 import * as THREE from 'three';
 import { CFG, rand, randRange, randInt, pick, chance, districtForBlock, DISTRICTS, clamp, mulberry32 } from './core.js';
 import { StreetGrid, STREET_CLASSES, hash2 } from './streets.js';
-import { facade as facadeHD, asphaltHD, sidewalkHD, grassHD, metroGroundHD, groundDetailHD } from './textures.js';
+import { facade as facadeHD, facadeTiling, shopfront, asphaltHD, sidewalkHD, grassHD, metroGroundHD, groundDetailHD } from './textures.js';
 
 const { blocksPerSide: N, pitch: P, platformSize: PLAT, buildZone: BZ, laneOffset } = CFG.city;
 export const WORLD_HALF = (N * P) / 2;                 // 224 m
@@ -72,6 +72,48 @@ function getRoofMaterial() {
   }
   return roofMatShared;
 }
+/**
+ * Réécrit les UV d'une boîte pour que la façade garde une ÉCHELLE PHYSIQUE.
+ *
+ * Bug corrigé (v0.5 « textures tordues ») : BoxGeometry mappe chaque face sur
+ * 0..1 ; une texture de 4 fenêtres étirée sur 60 m de haut donne des fenêtres
+ * de 15 m. Ici les UV sont exprimées en mètres : u = largeur / 14, v = hauteur
+ * / (étages × 3 m). Une fenêtre fait donc toujours la même taille, quel que
+ * soit l'immeuble, et les étages restent alignés au sol.
+ */
+/**
+ * UV de façade en MÈTRES (v0.6).
+ *
+ * mode 'tile' : u = largeur / 16 m, v = hauteur / (étages × 3 m). La texture
+ *   est une tuile d'étages sans bord, donc la répétition est invisible et les
+ *   fenêtres gardent une taille constante quel que soit l'immeuble.
+ * mode 'fit' : la tuile complète (corniche + plinthe + vitrine) est étirée sur
+ *   la façade. Réservé aux petits bâtiments de moins de 10 m, pour lesquels
+ *   une répétition montrerait plusieurs devantures empilées.
+ */
+function metricFacadeUV(geo, tileW = 14, tileH = 18, seed = 0, mode = 'tile') {
+  const pos = geo.attributes.position, nor = geo.attributes.normal, uv = geo.attributes.uv;
+  const offU = ((seed * 0.61803398875) % 1);
+  const h = (geo.userData.baseHalfY || 0) * 2 || 1;
+  const fit = mode === 'fit';
+  for (let i = 0; i < pos.count; i++) {
+    const ax = Math.abs(nor.getX(i)), ay = Math.abs(nor.getY(i));
+    const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+    let u, v;
+    const vv = fit ? (y + h / 2) / h : (y + (geo.userData.baseHalfY || 0)) / tileH;
+    if (ay > 0.5) {                       // toit / dessous : tapis régulier
+      u = fit ? uv.getX(i) : x / tileW; v = fit ? uv.getY(i) : z / tileW;
+    } else if (ax > 0.5) {                // faces X : la largeur est en Z
+      u = fit ? uv.getX(i) : z / tileW + offU; v = vv;
+    } else {                              // faces Z : la largeur est en X
+      u = fit ? uv.getX(i) : x / tileW + offU; v = vv;
+    }
+    uv.setXY(i, u, v);
+  }
+  uv.needsUpdate = true;
+  return geo;
+}
+
 function facadeMaterial(palette, height, variant = 0) {
   // granularité verticale : ~3 m par étage quel que soit l'immeuble
   const band = height < 10 ? 'low' : height < 30 ? 'mid' : height < 55 ? 'high' : 'tower';
@@ -83,12 +125,20 @@ function facadeMaterial(palette, height, variant = 0) {
   const key = `${palette}:${band}:${v}`;
   const hit = facadeMatCache.get(key);
   if (hit) return hit;
-  const { day, night, bump } = facadeHD(palette, band, v);
+  // >= 10 m : tuile d'étages répétable (pas de vitrine au 3e étage).
+  // < 10 m  : tuile complète étirée une seule fois (maison, échoppe).
+  const tiled = height >= 10;
+  const src = tiled ? facadeTiling(palette, band, v) : facadeHD(palette, 'low', v);
+  const { day, night, bump } = src;
+  const tileMeters = src.tileMeters || 16, tileHeight = src.tileHeight || 18;
   const m = new THREE.MeshStandardMaterial({
     map: day, emissiveMap: night, bumpMap: bump, bumpScale: 0.18,
     emissive: 0xffffff, emissiveIntensity: 0,
     roughness: 0.80, metalness: 0.05, envMapIntensity: 0.7,
   });
+  m.userData.tileW = tileMeters || 16;
+  m.userData.tileH = tileHeight || 18;
+  m.userData.uvMode = tiled ? 'tile' : 'fit';
   windowMaterials.push(m);
   facadeMatCache.set(key, m);
   return m;
@@ -214,7 +264,9 @@ function setTextureRepeat(material, repeat) {
  * Coût : quelques instructions par fragment, une seule texture par matériau.
  */
 function makeFacadeInstancedMaterial(palette, band, opts = {}) {
-  const { day, bump } = facadeHD(palette, band, opts.variant || 0);
+  // Tuile d'étages sans bord : en projection triplanaire, une texture avec
+  // devanture afficherait une boutique à chaque étage à 2 km.
+  const { day, bump, tileMeters, tileHeight } = facadeTiling(palette, band, opts.variant || 0);
   const mat = new THREE.MeshStandardMaterial({
     map: day,
     bumpMap: bump,
@@ -224,8 +276,8 @@ function makeFacadeInstancedMaterial(palette, band, opts = {}) {
     envMapIntensity: 0.55,
   });
   // Échelle : une tuile de façade ≈ 16 m de large et R étages de ~3 m
-  const TILE_W = opts.tileMeters || 16;
-  const TILE_H = opts.tileHeight || 19.2;
+  const TILE_W = opts.tileMeters || tileMeters || 16;
+  const TILE_H = opts.tileHeight || tileHeight || 19.2;
   mat.onBeforeCompile = (shader) => {
     shader.uniforms.uTileW = { value: TILE_W };
     shader.uniforms.uTileH = { value: TILE_H };
@@ -862,9 +914,44 @@ export class City {
     return out;
   }
 
+  /**
+   * Podium commerçant : boîte de 4 m de haut plaquée sur le pied d'immeuble,
+   * avec un bandeau de vitrines (`shopfront()`). TOUS les podiums de la ville
+   * partagent une seule InstancedMesh : 1 draw call, 1 matériau, et les
+   * vitrines s'allument la nuit puisque le matériau est poussé dans
+   * `windowMaterials`.
+   */
+  addPodium(x, z, w, d) {
+    if (!this._podium) {
+      const src = shopfront(0);
+      const mat = new THREE.MeshStandardMaterial({
+        map: src.day, emissiveMap: src.night, emissive: 0xffffff, emissiveIntensity: 0,
+        roughness: 0.42, metalness: 0.16, envMapIntensity: 0.8,
+      });
+      windowMaterials.push(mat);
+      const inst = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), mat, 512);
+      inst.count = 0;
+      inst.castShadow = true; inst.receiveShadow = true;
+      inst.frustumCulled = false;                   // couvre tout le cœur
+      inst.userData.dummy = new THREE.Object3D();
+      this._podium = inst;
+      this.scene.add(inst);
+    }
+    const inst = this._podium;
+    if (inst.count >= 512) return;
+    const o = inst.userData.dummy;
+    o.position.set(x, 2.15, z);
+    o.scale.set(w + 0.30, 4, d + 0.30);
+    o.rotation.set(0, 0, 0);
+    o.updateMatrix();
+    inst.setMatrixAt(inst.count, o.matrix);
+    inst.count++;
+    inst.instanceMatrix.needsUpdate = true;
+  }
+
   /** Ajoute un collider APRÈS l'indexation initiale (chunks streamés). */
-  addColliderLive(x, z, w, d, h = 0) {
-    const c = { minX: x - w / 2, maxX: x + w / 2, minZ: z - d / 2, maxZ: z + d / 2, h };
+  addColliderLive(x, z, w, d, h = 0, kind = 'solid') {
+    const c = { minX: x - w / 2, maxX: x + w / 2, minZ: z - d / 2, maxZ: z + d / 2, h, kind };
     this.colliders.push(c);
     const x0 = Math.floor(c.minX / P), x1 = Math.floor(c.maxX / P);
     const z0 = Math.floor(c.minZ / P), z1 = Math.floor(c.maxZ / P);
@@ -894,8 +981,13 @@ export class City {
     }
   }
 
-  addCollider(x, z, w, d, h = 0) {
-    this.colliders.push({ minX: x - w / 2, maxX: x + w / 2, minZ: z - d / 2, maxZ: z + d / 2, h });
+  /**
+   * @param {number} h    hauteur (marche sur les toits)
+   * @param {'solid'|'soft'} kind  'soft' = obstacle frêle (arbre, haie) :
+   *   il dévie et ralentit une voiture, mais ne l'arrête pas net comme un mur.
+   */
+  addCollider(x, z, w, d, h = 0, kind = 'solid') {
+    this.colliders.push({ minX: x - w / 2, maxX: x + w / 2, minZ: z - d / 2, maxZ: z + d / 2, h, kind });
   }
   indexColliders() {
     for (const c of this.colliders) {
@@ -911,11 +1003,13 @@ export class City {
   // Repousse un cercle (x,z,r) hors des AABB. Retourne la position corrigée.
   collide(x, z, r, y = 0) {
     const list = this.colliderGrid.get(Math.floor(x / P) + ',' + Math.floor(z / P));
+    let soft = false;
     if (list) for (const c of list) {
       if (c.h && y > 0.6 && c.h <= y + 0.6) continue;   // on marche sur le toit
       const nx = clamp(x, c.minX, c.maxX), nz = clamp(z, c.minZ, c.maxZ);
       let dx = x - nx, dz = z - nz; const d2 = dx * dx + dz * dz;
       if (d2 < r * r) {
+        if (c.kind === 'soft') soft = true;
         if (d2 < 1e-6) { // centre dedans : sortir par le plus petit axe
           const l = x - c.minX, rgt = c.maxX - x, t = z - c.minZ, b = c.maxZ - z;
           const m = Math.min(l, rgt, t, b);
@@ -925,7 +1019,7 @@ export class City {
       }
     }
     const lim = METRO_MAX - 40;   // limites de la métropole
-    return { x: clamp(x, METRO_MIN + 40, lim), z: clamp(z, METRO_MIN + 40, lim) };
+    return { x: clamp(x, METRO_MIN + 40, lim), z: clamp(z, METRO_MIN + 40, lim), soft };
   }
   isColliding(x, z, r) {
     const o = this.collide(x, z, r);
@@ -969,22 +1063,8 @@ export class City {
       const variant = (Math.abs(Math.round(x * 3 + z * 7)) >> 3);
       const side = facadeMaterial(palette, h, variant);
       const geo = new THREE.BoxGeometry(w, h, d, 1, 1, 1);
-      // UV adaptés à la façade : 1 tuile ≈ 16 m de large. Sans cela, une
-      // texture unique est étirée sur tous les bâtiments et les fenêtres
-      // deviennent larges et floues sur les immeubles larges.
-      const TILE_W = 16;
-      const uv = geo.attributes.uv;
-      for (const grp of geo.groups) {
-        // 0/1 = faces X (largeur = d), 4/5 = faces Z (largeur = w)
-        const faceW = (grp.materialIndex === 0 || grp.materialIndex === 1) ? d : w;
-        const scaleU = faceW / TILE_W;
-        if (Math.abs(scaleU - 1) < 0.02) continue;
-        for (let k = grp.start; k < grp.start + grp.count; k++) {
-          const vi = geo.index.getX(k);
-          uv.setX(vi, uv.getX(vi) * scaleU);
-        }
-      }
-      uv.needsUpdate = true;
+      geo.userData.baseHalfY = h / 2;      // pour aligner les étages au sol
+      metricFacadeUV(geo, side.userData.tileW, side.userData.tileH, x * 0.13 + z * 0.07, side.userData.uvMode);
       const mesh = new THREE.Mesh(geo, [side, side, roofMat, roofMat, side, side]);
       mesh.position.set(x, h / 2 + 0.15, z);
       mesh.castShadow = true; mesh.receiveShadow = true;
@@ -992,6 +1072,13 @@ export class City {
       mesh.matrixAutoUpdate = false; mesh.updateMatrix();
       this.scene.add(mesh);
       this.addCollider(x, z, w, d, h);
+      // rez-de-chaussée commerçant (podium 4 m) : une seule InstancedMesh
+      // pour tout le cœur de ville -> 1 draw call, pas un par boutique.
+      if (h >= 10 && (district === 'downtown' || district === 'commercial'
+          || district === 'oldtown' || palette === 'shop' || palette === 'office'
+          || palette === 'glass')) {
+        this.addPodium(x, z, w, d);
+      }
       // porte : face la plus proche d'une route
       const door = this.doorFor(x, z, w, d);
       const kind = district === 'downtown' || palette === 'office' || palette === 'glass' ? 'work'
@@ -1057,7 +1144,10 @@ export class City {
     const shopH = 4.5;
     const side = facadeMaterial('shop', shopH);
     const roofMat = getRoofMaterial();
-    const shop = new THREE.Mesh(new THREE.BoxGeometry(16, shopH, 8), [side, side, roofMat, roofMat, side, side]);
+    const shopGeo = new THREE.BoxGeometry(16, shopH, 8);
+    shopGeo.userData.baseHalfY = shopH / 2;
+    metricFacadeUV(shopGeo, side.userData.tileW, side.userData.tileH, 3.7, side.userData.uvMode);
+    const shop = new THREE.Mesh(shopGeo, [side, side, roofMat, roofMat, side, side]);
     shop.position.set(cx, shopH / 2 + 0.15, cz + 12); shop.castShadow = true; shop.receiveShadow = true; s.add(shop);
     this.addCollider(cx, cz + 12, 16, 8);
     this.buildings.push({ x: cx, z: cz + 12, w: 16, d: 8, h: shopH, district: 'commercial', kind: 'shop', door: { x: cx, z: cz + 6.5 } });
@@ -1074,23 +1164,133 @@ export class City {
     }
   }
   plantTree(x, z, scale, collide = true) { (this._trees ??= []).push({ x, z, scale, collide }); }
+  /**
+   * Arbres d'alignement — refonte v0.6.
+   *
+   * Avant : un cône de 6 segments + une icosaèdre verte plate = « petits trucs
+   * verts » impossibles à identifier, et une collision de 70 cm qui arrêtait
+   * net une voiture. Maintenant :
+   *   - tronc fuselé texturé (écorce procédurale) ;
+   *   - houppier en 3 lobes fusionnés (silhouette d'arbre, pas une boule) ;
+   *   - texture de feuillage + variation de teinte par instance ;
+   *   - collision réduite au tronc (0,5 m) : on peut frôler un arbre.
+   */
   finalizeTrees() {
     const trees = this._trees || [];
-    const trunkGeo = new THREE.CylinderGeometry(0.16, 0.24, 2.2, 6);
-    const leafGeo = new THREE.IcosahedronGeometry(1.7, 1);
-    const trunks = new THREE.InstancedMesh(trunkGeo, new THREE.MeshStandardMaterial({ color: 0x5a4230, roughness: 1 }), trees.length);
-    const leaves = new THREE.InstancedMesh(leafGeo, new THREE.MeshStandardMaterial({ color: 0x3f7031, roughness: 1, flatShading: true }), trees.length);
-    trunks.castShadow = leaves.castShadow = true;
-    const dummy = new THREE.Object3D();
-    trees.forEach((t, i) => {
-      dummy.rotation.set(0, rand() * 6.28, 0);
-      dummy.position.set(t.x, 1.1 * t.scale + 0.15, t.z); dummy.scale.setScalar(t.scale); dummy.updateMatrix();
-      trunks.setMatrixAt(i, dummy.matrix);
-      dummy.position.y = (2.2 + 1.4) * t.scale + 0.15; dummy.updateMatrix();
-      leaves.setMatrixAt(i, dummy.matrix);
-      if (t.collide !== false) this.addCollider(t.x, t.z, 0.7, 0.7);
+    if (!trees.length) { this._trees = []; return; }
+
+    // --- écorce : stries verticales + éclats ---
+    const bark = document.createElement('canvas'); bark.width = bark.height = 128;
+    const bg = bark.getContext('2d');
+    if (bg) {
+      bg.fillStyle = '#6b4c34'; bg.fillRect(0, 0, 128, 128);
+      for (let i = 0; i < 260; i++) {
+        const x = rand() * 128, w = randRange(0.6, 2.2), h = randRange(8, 40);
+        bg.fillStyle = `rgba(${randInt(30, 70)},${randInt(20, 45)},${randInt(12, 30)},${randRange(0.12, 0.35)})`;
+        bg.fillRect(x, rand() * 128, w, h);
+      }
+      for (let i = 0; i < 90; i++) {
+        bg.fillStyle = `rgba(210,190,160,${randRange(0.03, 0.10)})`;
+        bg.fillRect(rand() * 128, rand() * 128, randRange(1, 3), randRange(6, 26));
+      }
+    }
+    const barkTex = new THREE.CanvasTexture(bark);
+    barkTex.wrapS = barkTex.wrapT = THREE.RepeatWrapping;
+    barkTex.colorSpace = THREE.SRGBColorSpace;
+    barkTex.repeat.set(1, 2);
+
+    // --- feuillage : taches de vert, trous sombres, reflets ---
+    const leaf = document.createElement('canvas'); leaf.width = leaf.height = 256;
+    const lg = leaf.getContext('2d');
+    if (lg) {
+      lg.fillStyle = '#3f6b30'; lg.fillRect(0, 0, 256, 256);
+      for (let i = 0; i < 900; i++) {
+        const g = randInt(58, 132), r = Math.round(g * 0.55), b = Math.round(g * 0.34);
+        lg.fillStyle = `rgba(${r},${g},${b},${randRange(0.12, 0.5)})`;
+        lg.beginPath();
+        lg.ellipse(rand() * 256, rand() * 256, randRange(2, 9), randRange(2, 7), rand() * 3, 0, 6.283);
+        lg.fill();
+      }
+      for (let i = 0; i < 220; i++) {
+        lg.fillStyle = `rgba(12,26,10,${randRange(0.15, 0.4)})`;
+        lg.beginPath();
+        lg.ellipse(rand() * 256, rand() * 256, randRange(1.5, 5), randRange(1.5, 4), rand() * 3, 0, 6.283);
+        lg.fill();
+      }
+    }
+    const leafTex = new THREE.CanvasTexture(leaf);
+    leafTex.wrapS = leafTex.wrapT = THREE.RepeatWrapping;
+    leafTex.colorSpace = THREE.SRGBColorSpace;
+    if (leafTex.colorSpace) { leafTex.anisotropy = 4; }
+
+    const trunkGeo = new THREE.CylinderGeometry(0.17, 0.30, 2.9, 8, 1);
+    const trunkMat = new THREE.MeshStandardMaterial({ map: barkTex, color: 0xffffff, roughness: 0.95, metalness: 0 });
+
+    // houppier : 3 lobes fusionnés en une seule géométrie (1 draw call)
+    const lobes = [];
+    const lobeSpec = [
+      [0, 0, 0, 1.55], [0.85, -0.35, 0.25, 1.05],
+      [-0.8, -0.25, -0.35, 1.0], [0.1, 0.6, -0.2, 0.9],
+    ];
+    for (const [ox, oy, oz, r] of lobeSpec) {
+      const g = new THREE.IcosahedronGeometry(r, 1);
+      g.scale(1, 0.86, 1);
+      g.translate(ox, oy, oz);
+      lobes.push(g);
+    }
+    // fusion manuelle (position + normal + uv projetée)
+    let vcount = 0;
+    for (const g of lobes) vcount += g.attributes.position.count;
+    const pos = new Float32Array(vcount * 3), nor = new Float32Array(vcount * 3), uv = new Float32Array(vcount * 2);
+    let vo = 0;
+    for (const g of lobes) {
+      const p = g.attributes.position, n = g.attributes.normal;
+      for (let i = 0; i < p.count; i++) {
+        const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+        pos[(vo + i) * 3] = x; pos[(vo + i) * 3 + 1] = y; pos[(vo + i) * 3 + 2] = z;
+        nor[(vo + i) * 3] = n.getX(i); nor[(vo + i) * 3 + 1] = n.getY(i); nor[(vo + i) * 3 + 2] = n.getZ(i);
+        // UV sphériques : le feuillage tourne autour du tronc, sans couture nette
+        uv[(vo + i) * 2] = (Math.atan2(z, x) / (Math.PI * 2)) + 0.5;
+        uv[(vo + i) * 2 + 1] = (y + 1.6) / 3.2;
+      }
+      vo += p.count;
+      g.dispose();
+    }
+    const crownGeo = new THREE.BufferGeometry();
+    crownGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    crownGeo.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+    crownGeo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    const crownMat = new THREE.MeshStandardMaterial({
+      map: leafTex, color: 0xffffff, roughness: 0.92, metalness: 0,
     });
-    this.scene.add(trunks, leaves);
+
+    const trunks = new THREE.InstancedMesh(trunkGeo, trunkMat, trees.length);
+    const crowns = new THREE.InstancedMesh(crownGeo, crownMat, trees.length);
+    trunks.castShadow = crowns.castShadow = true;
+    crowns.receiveShadow = true;
+    const dummy = new THREE.Object3D();
+    const tint = new THREE.Color();
+    trees.forEach((t, i) => {
+      const s = t.scale;
+      dummy.rotation.set(0, (t.x * 0.37 + t.z * 0.11) % 6.283, 0);
+      dummy.position.set(t.x, 1.45 * s + 0.15, t.z);
+      dummy.scale.set(s, s, s);
+      dummy.updateMatrix();
+      trunks.setMatrixAt(i, dummy.matrix);
+      dummy.position.y = (2.9 + 1.15) * s + 0.15;
+      dummy.rotation.set(randRange(-0.06, 0.06), dummy.rotation.y, randRange(-0.06, 0.06));
+      dummy.updateMatrix();
+      crowns.setMatrixAt(i, dummy.matrix);
+      // variation de teinte : du vert olive au vert profond
+      const h = 0.22 + ((i * 0.618) % 1) * 0.08;
+      tint.setHSL(h, 0.42 + ((i * 0.37) % 1) * 0.14, 0.34 + ((i * 0.71) % 1) * 0.10);
+      crowns.setColorAt(i, tint);
+      // 'soft' : un arbre freine et dévie la voiture, il ne l'arrête pas net.
+      if (t.collide !== false) this.addCollider(t.x, t.z, 0.5, 0.5, 2.9 * s, 'soft');
+    });
+    if (crowns.instanceColor) crowns.instanceColor.needsUpdate = true;
+    this.scene.add(trunks, crowns);
+    this.treesTotal = trees.length;
     this._trees = [];
   }
 

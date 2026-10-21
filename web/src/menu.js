@@ -139,6 +139,7 @@ export class MenuSystem {
       case 'shadows': S.set('shadows', value); S.apply(ctx); break;
       case 'lights': S.set('lights', value); S.apply(ctx); break;
       case 'rtx': S.set('rtx', value === 'on'); S.apply(ctx); break;
+      case 'cinema': S.set('cinema', value === 'on'); S.apply(ctx); break;
       case 'traffic': S.set('traffic', Number(value)); S.applyWorld(ctx); break;
       case 'peds': S.set('peds', Number(value)); S.applyWorld(ctx); break;
       case 'autoWeather':
@@ -251,6 +252,7 @@ export class MenuSystem {
 
         <div class="pm-section">${icon('sparkles', { size: 15 })} Mode RTX
           ${seg('rtx', [{ v: 'off', t: 'Désactivé' }, { v: 'on', t: 'Activé' }], s.rtx ? 'on' : 'off')}
+          ${row('Étalonnage cinéma', 'Vignette + contraste (gratuit)', seg('cinema', [{ v: 'off', t: 'Non' }, { v: 'on', t: 'Oui' }], s.cinema !== false ? 'on' : 'off'))}
         </div>
         <div class="pm-hint"><b>Honnêteté technique :</b> ce n'est pas du ray tracing matériel (impossible en WebGL sans extension).
         Le mode RTX renforce les reflets PBR du ciel sur les carrosseries et la chaussée, adoucit les ombres et relève l'exposition — un rendu plus « cinéma », pas de vrais rayons.</div>

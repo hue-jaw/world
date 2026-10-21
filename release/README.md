@@ -6,8 +6,23 @@ l'environnement de développement, pas sur GitHub Actions).
 
 | Fichier | Usage |
 |---|---|
-| `METROPOLIS-0.5.1.html` | **Double-clic** → le jeu complet s'ouvre dans le navigateur, hors-ligne, sans installation. `F11` plein écran. |
-| `METROPOLIS-0.5.1-win64.exe` | Dans la release GitHub `v0.5.1`, construit par GitHub Actions sur Windows (fenêtre dédiée, `F11` / `F12`). |
+| `METROPOLIS-0.6.0.html` | **Double-clic** → le jeu complet s'ouvre dans le navigateur, hors-ligne, sans installation. `F11` plein écran. |
+| `METROPOLIS-0.6.0-win64.exe` | Dans la release GitHub `v0.6.0`, construit par GitHub Actions sur Windows (fenêtre dédiée, `F11` / `F12`). |
+| `METROPOLIS-0.5.1.html` | Version précédente (correctif de chargement), conservée pour les liens de la release `v0.5.1`. |
+
+## Ce que corrige la 0.6.0
+
+- Façades : UV en mètres + tuile d'étages répétable → plus de fenêtres étirées,
+  plus de vitrine au 3ᵉ étage ; rez-de-chaussée commerçant sur podium instancié.
+- Arbres : tronc/houppier texturés, collider « soft » de 0,5 m → la voiture est
+  freinée, pas stoppée net.
+- Saut : buffer d'appui 0,16 s + coyote 0,12 s → **A** (manette) et **Espace**
+  sautent réellement (1,25 m).
+- **L3** : sprint à pied, regard arrière en véhicule.
+- Moto : cavalier visible (joueur **et** IA), et **zéro création de lumière** à
+  la montée — c'était la cause du freeze (recompilation de tous les shaders).
+
+Détail et mesures : `docs/09_FIX_V0.6.md`.
 
 ## Ce que corrige la 0.5.1
 

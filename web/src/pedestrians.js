@@ -173,6 +173,21 @@ class Citizen {
       }
     }
 
+    // ---- évitement d'obstacles (v0.6) -------------------------------------
+    // Avant : le piéton visait son waypoint en ligne droite et se contentait
+    // d'être repoussé par `collide()` : il « fonçait dans les arbres » et
+    // restait collé contre le tronc. On sonde maintenant 1,6 m devant et on
+    // teste des déviations de ±35°, ±70°, ±105° : la première libre est prise.
+    if (this.speed > 0.15 && (moveX || moveZ)) {
+      const probe = (dx, dz) => this.city.isColliding(this.pos.x + dx * 1.6, this.pos.z + dz * 1.6, 0.34);
+      if (probe(moveX, moveZ)) {
+        for (const a of [0.6, -0.6, 1.2, -1.2, 1.8, -1.8]) {
+          const ca = Math.cos(a), sa = Math.sin(a);
+          const nx = moveX * ca - moveZ * sa, nz = moveX * sa + moveZ * ca;
+          if (!probe(nx, nz)) { moveX = nx; moveZ = nz; break; }
+        }
+      }
+    }
     this.speed = damp(this.speed, targetSpeed, 6, dt);
     // séparation douce entre piétons
     const sep = ctx.peds.separationFor(this);

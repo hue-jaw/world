@@ -43,6 +43,7 @@ const DEFAULTS = {
   shadows: 'high',
   lights: 'high',
   rtx: false,
+  cinema: true,          // étalonnage + vignette (filtre CSS, coût nul)
   traffic: 1,             // multiplicateur de densité (0.5 → 1.6)
   peds: 1,
   autoWeather: true,
@@ -106,6 +107,11 @@ export class Settings {
    */
   apply(ctx) {
     const { renderer, env, scene } = ctx;
+    // Étalonnage : simple classe CSS, aucun shader à compiler.
+    if (typeof document !== 'undefined' && document.body) {
+      const app = document.getElementById('app');
+      if (app) app.classList.toggle('cinema', this.state.cinema !== false);
+    }
     const sh = SHADOW_LEVELS[this.state.shadows] || SHADOW_LEVELS.high;
     const li = LIGHT_LEVELS[this.state.lights] || LIGHT_LEVELS.high;
 
