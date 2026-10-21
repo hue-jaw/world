@@ -9,9 +9,9 @@
 
 ### Option A — télécharger le .exe construit automatiquement (recommandé)
 
-**[⬇ github.com/hue-jaw/world/releases/latest](https://github.com/hue-jaw/world/releases/latest)** → `METROPOLIS-0.2.0-win64.exe`
+**[⬇ github.com/hue-jaw/world/releases/latest](https://github.com/hue-jaw/world/releases/latest)** → `METROPOLIS-0.5.1-win64.exe`
 
-L'exécutable **portable** (un seul fichier, aucune installation, aucun droit administrateur) est reconstruit par GitHub Actions à chaque mise à jour du jeu. Le workflow le publie aussi en artefact de build : onglet *Actions* → *Build Windows EXE* → *Artifacts* → `METROPOLIS-windows-x64`.
+L'exécutable **portable** (un seul fichier, aucune installation, aucun droit administrateur) est reconstruit par GitHub Actions à chaque mise à jour du jeu, et déposé dans la release **de sa propre version** (le workflow lit `desktop/package.json`). Le workflow le publie aussi en artefact de build : onglet *Actions* → *Build Windows EXE* → *Artifacts* → `METROPOLIS-windows-x64`.
 
 ### Option B — le construire soi-même (≈ 3 minutes)
 
@@ -20,7 +20,7 @@ Sur une machine Windows avec [Node.js 20+](https://nodejs.org) :
 ```bash
 cd desktop
 npm install          # télécharge Electron (dev uniquement)
-npm run dist:win     # produit release/METROPOLIS-0.2.0-win64.exe
+npm run dist:win     # produit release/METROPOLIS-0.5.1-win64.exe
 ```
 
 Sur macOS/Linux, remplacez par `npm run dist` pour un paquet de votre système.

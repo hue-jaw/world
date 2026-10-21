@@ -136,10 +136,17 @@ function addGroundDetail(material, detailTex, { tileMeters = 4, gain = 0.5 } = {
   // onBeforeCompile et sa clé de cache. Il faut les CHAÎNER, sinon le dernier
   // appelé écrase le précédent et la répétition UV disparaît silencieusement.
   const prevKey = material.customProgramCacheKey;
-  material.customProgramCacheKey = () => `${prevKey ? prevKey() : 'm'}|groundDetail`;
+  // ATTENTION au receveur : la méthode par défaut de three.js est
+  //   customProgramCacheKey() { return this.onBeforeCompile.toString(); }
+  // Appelée détachée (`prevKey()`), `this` vaut undefined et le premier rendu
+  // en navigateur lève « Cannot read properties of undefined (reading
+  // 'onBeforeCompile') ». On la rappelle donc avec le matériau comme receveur.
+  material.customProgramCacheKey = function cacheKeyWithDetail() {
+    return `${prevKey ? prevKey.call(this) : 'm'}|groundDetail`;
+  };
   const prevHook = material.onBeforeCompile;
-  material.onBeforeCompile = (shader, renderer) => {
-    if (prevHook) prevHook(shader, renderer);
+  material.onBeforeCompile = function hookGroundDetail(shader, renderer) {
+    if (prevHook) prevHook.call(this, shader, renderer);
     shader.uniforms.uDetail = { value: t };
     shader.uniforms.uDetailTile = { value: tileMeters };
     shader.uniforms.uDetailGain = { value: gain };
@@ -172,10 +179,14 @@ function addGroundDetail(material, detailTex, { tileMeters = 4, gain = 0.5 } = {
 function setTextureRepeat(material, repeat) {
   material.userData.uvRepeat = repeat;
   const prev = material.customProgramCacheKey;
-  material.customProgramCacheKey = () => `${prev ? prev() : 'm'}|rep${repeat}`;
+  // Même piège du receveur que dans addGroundDetail() : `prev()` détaché
+  // laisse `this === undefined` dans l'implémentation par défaut de three.js.
+  material.customProgramCacheKey = function cacheKeyWithRepeat() {
+    return `${prev ? prev.call(this) : 'm'}|rep${repeat}`;
+  };
   const prevHook = material.onBeforeCompile;
-  material.onBeforeCompile = (shader, renderer) => {
-    if (prevHook) prevHook(shader, renderer);
+  material.onBeforeCompile = function hookUvRepeat(shader, renderer) {
+    if (prevHook) prevHook.call(this, shader, renderer);
     shader.uniforms.uUvRepeat = { value: repeat };
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nuniform float uUvRepeat;')

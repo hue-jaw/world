@@ -1,5 +1,10 @@
 # Construit METROPOLIS-<version>-win64.exe (portable) a chaque push du jeu,
-# puis l'attache a une Release GitHub : lien de telechargement direct.
+# puis l'attache a la Release GitHub correspondant a CETTE version.
+#
+# v0.5.1 : le tag n'est plus code en dur. Il est lu dans desktop/package.json,
+# sinon tous les builds atterrissaient dans la release v0.3.0 (d'ou le
+# METROPOLIS-0.4.0-win64.exe visible dans la release 0.3.0, et aucune archive
+# dans la 0.5.0).
 name: Build Windows EXE
 
 on:
@@ -18,7 +23,7 @@ permissions:
 jobs:
   build-windows:
     runs-on: windows-latest
-    timeout-minutes: 25
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v5
 
@@ -30,9 +35,12 @@ jobs:
         shell: bash
         run: cd web && npm ci
 
-      - name: Empaqueter le jeu en un fichier
+      # La porte qualite complete tourne AVANT l'empaquetage : si un test
+      # echoue (par exemple un crash au premier rendu), aucun .exe casse n'est
+      # publie. C'est exactement ce qui manquait en v0.5.0.
+      - name: Tests (ville, integration, rendu, bundle)
         shell: bash
-        run: node tools/build_single_file.mjs
+        run: node tools/smoke_test.mjs && node tools/test_features.mjs && node tools/test_integration.mjs && node tools/test_v04.mjs && node tools/test_v05.mjs && node tools/check_assets.mjs && node tools/test_render.mjs && node tools/build_single_file.mjs && node tools/test_bundle.mjs
 
       - name: Installer les dependances desktop
         shell: bash
@@ -52,22 +60,25 @@ jobs:
           path: desktop/release/*.exe
           retention-days: 90
 
-      - name: Publier la Release (telechargement direct, sans compte)
+      - name: Publier la Release de la version courante
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
         run: |
-          TAG="v0.3.0"
+          VERSION=$(node -p "require('./desktop/package.json').version")
+          TAG="v$VERSION"
+          echo "Version publiee : $TAG"
           NOTES="Executable Windows portable (x64), sans installation."
-          NOTES="$NOTES Double-cliquez : le jeu demarre dans sa propre fenetre (F11 plein ecran)."
-          NOTES="$NOTES Contenu : quartier vivant, trafic IA avec feux, PNJ a routines,"
-          NOTES="$NOTES Metropole de 8 km streamée, autoroute, circuit privé, 8 vehicules et 44 citoyens 3D,"
-          NOTES="$NOTES camera auto, GPS fleches au sol, manettes Xbox/PS, economie (maisons, garage, upgrades),"
-          NOTES="$NOTES 100% hors-ligne, aucune installation, aucun droit administrateur."
+          NOTES="$NOTES Double-cliquez : le jeu demarre dans sa propre fenetre (F11 plein ecran, F12 outils)."
+          NOTES="$NOTES Cette version corrige l'erreur de chargement 'reading onBeforeCompile'."
+          NOTES="$NOTES Ville variable et asymetrique, rues nommees, sens uniques, giratoires,"
+          NOTES="$NOTES canal avec 129 ponts, autoroute peripherique, police, drift, GPS au sol,"
+          NOTES="$NOTES economie, manettes Xbox/PS, 100% hors-ligne, aucun droit administrateur."
+          NOTES="$NOTES Version HTML equivalente : release/METROPOLIS-$VERSION.html dans le depot."
           if ! gh release view "$TAG" --repo "$REPO" > /dev/null 2>&1; then
             gh release create "$TAG" --repo "$REPO" \
-              --title "METROPOLIS v0.3.0 - metropole 8 km, economie et manettes" \
+              --title "METROPOLIS $TAG - correctif de chargement + ville variable" \
               --notes "$NOTES"
           fi
           gh release upload "$TAG" desktop/release/*.exe --repo "$REPO" --clobber

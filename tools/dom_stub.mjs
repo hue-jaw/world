@@ -75,6 +75,30 @@ export function installDOM() {
       if (!byId.has(id)) byId.set(id, new FakeElement('div', id));
       return byId.get(id);
     },
+    // three.js (ImageLoader) crée ses <img> via createElementNS : sans cette
+    // méthode, le chargement des GLB lève et le boot s'arrête. L'élément renvoyé
+    // doit échouer comme `globalThis.Image` (asynchrone), sinon la promesse de
+    // chargement de texture ne se résout jamais et le boot paraît figé.
+    createElementNS: (ns, tag) => {
+      const el = doc.createElement(tag);
+      if (String(tag).toLowerCase() === 'img') {
+        Object.defineProperty(el, 'src', {
+          set() {
+            // three.js utilise addEventListener('error'), pas seulement onerror :
+            // si on n'appelle que la propriété, la promesse ne se règle jamais
+            // et le chargement des modèles reste bloqué indéfiniment.
+            setTimeout(() => {
+              const ev = { type: 'error' };
+              if (typeof el.onerror === 'function') el.onerror(ev);
+              for (const fn of el._listeners.get('error') || []) fn(ev);
+              for (const fn of el._listeners.get('load') || []) { /* pas de décodage */ }
+            }, 0);
+          },
+          get() { return ''; },
+        });
+      }
+      return el;
+    },
     querySelectorAll: () => [],
     querySelector: () => null,
     addEventListener() {},
