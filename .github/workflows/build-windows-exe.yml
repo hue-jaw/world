@@ -120,7 +120,10 @@ jobs:
           NOTES="$NOTES economie, manettes Xbox/PS, 100% hors-ligne, aucun droit administrateur."
           NOTES="$NOTES Version HTML equivalente : release/METROPOLIS-$VERSION.html dans le depot."
           if ! gh release view "$TAG" --repo "$REPO" > /dev/null 2>&1; then
-            gh release create "$TAG" --repo "$REPO" \
+            # --target : sans lui, `gh release create` crée le tag sur la
+            # branche par défaut. Le tag v0.6.0 a dû être déplacé à la main
+            # (il pointait sur main, sans le code de la version).
+            gh release create "$TAG" --repo "$REPO" --target "$GITHUB_SHA" \
               --title "METROPOLIS $TAG - facades, arbres, saut, L3 et moto corriges" \
               --notes "$NOTES"
           fi
