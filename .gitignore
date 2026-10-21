@@ -17,3 +17,9 @@ unreal/Plugins/**/Intermediate/
 # Divers
 .DS_Store
 *.log
+
+# Artefacts generes (rebuild : node tools/build_single_file.mjs)
+METROPOLIS.html
+desktop/index.html
+desktop/release/
+desktop/node_modules/

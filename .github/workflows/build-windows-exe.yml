@@ -1,0 +1,50 @@
+# Construit METROPOLIS-<version>-win64.exe (portable) a chaque push.
+# Pour recuperer le binaire : Actions -> dernier run -> Artifacts.
+name: Build Windows EXE
+
+on:
+  push:
+    branches: ['arena/**', 'main']
+    paths:
+      - 'web/**'
+      - 'tools/**'
+      - 'desktop/**'
+      - '.github/workflows/build-windows-exe.yml'
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Installer les dependances du jeu
+        shell: bash
+        run: cd web && npm ci
+
+      - name: Empaqueter le jeu en un fichier
+        shell: bash
+        run: node tools/build_single_file.mjs
+
+      - name: Installer les dependances desktop
+        shell: bash
+        run: cd desktop && npm install
+
+      - name: Construire l'executable portable
+        shell: bash
+        run: cd desktop && npm run dist:win
+
+      - name: Verifier la presence du binaire
+        shell: bash
+        run: ls -la desktop/release/*.exe
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: METROPOLIS-windows-x64
+          path: desktop/release/*.exe
+          retention-days: 90

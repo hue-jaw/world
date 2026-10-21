@@ -4,5 +4,15 @@
   "private": true,
   "type": "module",
   "description": "METROPOLIS - Vertical slice jouable (validation des systèmes open-world)",
-  "dependencies": { "three": "^0.170.0" }
+  "dependencies": {
+    "three": "^0.170.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2"
+  },
+  "scripts": {
+    "start": "python3 -m http.server 8000 --bind 0.0.0.0",
+    "build": "node ../tools/build_single_file.mjs",
+    "test": "node ../tools/smoke_test.mjs"
+  }
 }

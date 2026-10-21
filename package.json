@@ -1,0 +1,11 @@
+{
+  "name": "metropolis",
+  "version": "0.1.0",
+  "private": true,
+  "description": "METROPOLIS - open-world urbain vivant (vertical slice + projet UE5.5)",
+  "type": "module",
+  "scripts": {
+    "build": "node tools/build_single_file.mjs",
+    "test": "node tools/smoke_test.mjs"
+  }
+}

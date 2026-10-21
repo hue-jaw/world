@@ -4,13 +4,20 @@ Un jeu open-world 3D en construction : une métropole fictive où le trafic, les
 
 ## 🎮 Jouer tout de suite à la vertical slice
 
-La vertical slice v0.1 tourne dans un navigateur (Three.js), sans rien installer côté joueur :
+### Option 1 — double-clic, zéro installation *(le plus simple)*
+Téléchargez **`METROPOLIS.html`** et **double-cliquez dessus**. Le jeu complet s'ouvre dans votre navigateur, hors-ligne, sans serveur. `F11` = plein écran. La sauvegarde est automatique.
 
+> Ce fichier regroupe le jeu, les styles et Three.js en un seul document (563 Ko). Pour le régénérer : `npm run build` à la racine.
+
+### Option 2 — exécutable Windows `.exe`
+`METROPOLIS.exe` (portable, sans installation) est **construit automatiquement par GitHub Actions** : onglet **Actions** → workflow *Build Windows EXE* → dernier run → **Artifacts** → `METROPOLIS-windows-x64`.
+Pour le compiler soi-même : `cd desktop && npm install && npm run dist:win`. Détails : [`desktop/README.md`](desktop/README.md).
+
+### Option 3 — mode développement (serveur local, itération rapide)
 ```bash
 cd web
-npm install            # une seule fois (dépendance : three)
-python3 -m http.server 8000 --bind 0.0.0.0
-# puis ouvrir http://localhost:8000
+npm install            # une seule fois (three + esbuild)
+npm start              # http://localhost:8000
 ```
 
 **Contenu jouable :** personnage 3e personne · 7 types de véhicules conduisibles · trafic IA qui respecte feux et voies · 44 PNJ avec routines quotidiennes · cycle jour/nuit complet · météo dynamique (pluie, orage, brouillard) aux effets gameplay réels · police avec poursuites et arrestations · missions de livraison chronométrées · minimap/boussole · sauvegarde automatique · audio 100 % procédural.
@@ -24,13 +31,12 @@ python3 -m http.server 8000 --bind 0.0.0.0
 | `H` · `L` · `M` | Klaxon · phares · son |
 | `T` · `G` · `F1` | +3 h · météo suivante · panneau debug |
 
-## 🧪 Tests
+## 🧪 Tests & build
 
 ```bash
-node tools/smoke_test.mjs
-# -> 17 vérifications : génération de ville, graphes de navigation,
-#    900 frames de simulation trafic/PNJ, mission de bout en bout,
-#    conduite, police, météo, jour/nuit, sauvegarde.
+npm test        # 17 vérifications headless (ville, trafic, PNJ, mission,
+                # conduite, police, météo, jour/nuit, sauvegarde)
+npm run build   # régénère METROPOLIS.html (fichier unique, double-cliquable)
 ```
 
 ## 🏗️ Produit cible : Unreal Engine 5.5
@@ -49,10 +55,12 @@ node tools/smoke_test.mjs
 ## 📁 Structure
 
 ```
-/web      Vertical slice jouable (validation des systèmes, itération rapide)
-/unreal   Projet Unreal Engine 5.5 (produit AAA)
-/docs     Décisions · architecture · plan · risques & performance
-/tools    Tests automatisés headless
+METROPOLIS.html   Le jeu entier en un fichier, double-cliquable (généré)
+/web              Sources de la vertical slice (modules ES + serveur de dev)
+/desktop          Coquille Electron → METROPOLIS.exe portable
+/unreal           Projet Unreal Engine 5.5 (produit AAA cible)
+/docs             Décisions · architecture · plan · risques & performance
+/tools            Build fichier unique + tests automatisés headless
 ```
 
 **Philosophie (non négociable) :** prototype fonctionnel > système complexe cassé · immersion > taille artificielle de carte · aucun système sans budget de performance ni test.
