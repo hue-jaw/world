@@ -10,7 +10,7 @@ Téléchargez **`METROPOLIS.html`** et **double-cliquez dessus**. Le jeu complet
 > Ce fichier regroupe le jeu, les styles et Three.js en un seul document (563 Ko). Pour le régénérer : `npm run build` à la racine.
 
 ### Option 2 — exécutable Windows `.exe`
-`METROPOLIS.exe` (portable, sans installation) est **construit automatiquement par GitHub Actions** : onglet **Actions** → workflow *Build Windows EXE* → dernier run → **Artifacts** → `METROPOLIS-windows-x64`.
+**[⬇ Télécharger METROPOLIS.exe](https://github.com/hue-jaw/world/releases/latest)** — portable, sans installation, sans droits administrateur, 100 % hors-ligne. Construit automatiquement par GitHub Actions à chaque mise à jour.
 Pour le compiler soi-même : `cd desktop && npm install && npm run dist:win`. Détails : [`desktop/README.md`](desktop/README.md).
 
 ### Option 3 — mode développement (serveur local, itération rapide)

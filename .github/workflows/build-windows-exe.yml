@@ -1,5 +1,5 @@
-# Construit METROPOLIS-<version>-win64.exe (portable) a chaque push.
-# Pour recuperer le binaire : Actions -> dernier run -> Artifacts.
+# Construit METROPOLIS-<version>-win64.exe (portable) a chaque push du jeu,
+# puis l'attache a une Release GitHub : lien de telechargement direct.
 name: Build Windows EXE
 
 on:
@@ -12,16 +12,19 @@ on:
       - '.github/workflows/build-windows-exe.yml'
   workflow_dispatch:
 
+permissions:
+  contents: write # requis pour creer la Release et y deposer le .exe
+
 jobs:
   build-windows:
     runs-on: windows-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Installer les dependances du jeu
         shell: bash
@@ -48,3 +51,23 @@ jobs:
           name: METROPOLIS-windows-x64
           path: desktop/release/*.exe
           retention-days: 90
+
+      - name: Publier la Release (telechargement direct, sans compte)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          TAG="v0.1.0"
+          gh release view "$TAG" --repo "$REPO" > /dev/null 2>&1 || \
+            gh release create "$TAG" --repo "$REPO" \
+              --title "METROPOLIS v0.1.0 — vertical slice jouable" \
+              --notes "Executable Windows portable (x64), sans installation.
+
+Double-cliquez : le jeu demarre dans sa propre fenetre (F11 plein ecran).
+
+Contenu : quartier vivant, trafic IA avec feux, PNJ a routines, 7 vehicules conduisibles, police et poursuites, missions de livraison, cycle jour/nuit, meteo a effets gameplay, sauvegarde automatique.
+
+Le jeu tourne 100% hors-ligne. Aucune installation, aucun droit administrateur."
+          gh release upload "$TAG" desktop/release/*.exe --repo "$REPO" --clobber
+          echo "Release : https://github.com/$REPO/releases/tag/$TAG"

@@ -9,10 +9,9 @@
 
 ### Option A — télécharger le .exe construit automatiquement (recommandé)
 
-L'exécutable Windows est produit par GitHub Actions à chaque mise à jour de la branche :
-**onglet *Actions* du dépôt → workflow « Build Windows EXE » → dernier run réussi → *Artifacts* → `METROPOLIS-windows-x64`**.
+**[⬇ github.com/hue-jaw/world/releases/latest](https://github.com/hue-jaw/world/releases/latest)** → `METROPOLIS-0.1.0-win64.exe`
 
-> L'archive de l'artefact contient `METROPOLIS-0.1.0-win64.exe` : un exécutable **portable** (un seul fichier, aucune installation, aucun droit administrateur).
+L'exécutable **portable** (un seul fichier, aucune installation, aucun droit administrateur) est reconstruit par GitHub Actions à chaque mise à jour du jeu. Le workflow le publie aussi en artefact de build : onglet *Actions* → *Build Windows EXE* → *Artifacts* → `METROPOLIS-windows-x64`.
 
 ### Option B — le construire soi-même (≈ 3 minutes)
 
