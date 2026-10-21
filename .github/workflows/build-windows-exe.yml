@@ -53,8 +53,9 @@ jobs:
         shell: bash
         run: |
           FAILED=0
+          : > ci-test-report.txt
           for t in smoke_test test_features test_integration test_v04 test_v05 check_assets test_render; do
-            echo "== $t"
+            echo "== $t" | tee -a ci-test-report.txt
             if node "tools/$t.mjs" > "out_$t.log" 2>&1; then
               tail -n 2 "out_$t.log"
             else
@@ -62,6 +63,7 @@ jobs:
               echo "::error title=$t::HEAD $(head -n 18 out_$t.log | tr '\n' ' ' | head -c 400) ||TAIL $(tail -n 5 out_$t.log | tr '\n' ' ' | head -c 400)"
             fi
           done
+          cat out_*.log >> ci-test-report.txt 2>/dev/null || true
           echo "== build"
           node tools/build_single_file.mjs > out_build.log 2>&1 || FAILED=1
           echo "== test_bundle"
@@ -70,6 +72,18 @@ jobs:
           else
             FAILED=1
             echo "::error title=test_bundle::HEAD $(head -n 6 out_bundle.log | tr '\n' ' ' | head -c 400) ||TAIL $(tail -n 6 out_bundle.log | tr '\n' ' ' | head -c 300)"
+          fi
+          # En cas d'echec, on pousse le rapport sur une branche dediee : les
+          # logs Actions ne sont pas telechargeables depuis l'environnement de
+          # developpement (hote bloque), un fichier versionne l'est.
+          if [ $FAILED -ne 0 ]; then
+            head -c 60000 ci-test-report.txt > ci-test-report.tmp && mv ci-test-report.tmp ci-test-report.txt
+            git config user.name "metropolis-ci"
+            git config user.email "ci@localhost"
+            git checkout -B ci-report
+            git add -f ci-test-report.txt
+            git commit -m "ci: rapport de test (echec)" || true
+            git push -f origin ci-report || true
           fi
           exit $FAILED
 
