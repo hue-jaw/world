@@ -91,3 +91,21 @@ Ajouter un véhicule ou un quartier = ajouter une entrée de données. C'est le 
 ```
 
 Conventions de nommage : systèmes nommés par domaine (pas par techno), événements au présent nom commun (`crime`, `crash`), UE5 : préfixes Epic (`A`, `U`, `F`, `E`).
+
+---
+
+## Couche Assets (v0.2)
+
+Rôle : fournir des visuels 3D réels sans jamais bloquer le jeu.
+
+| Élément | Responsabilité |
+|---|---|
+| `web/assets/models/*.glb` | sources CC0 (Kenney Car Kit, Quaternius Modular Men) |
+| `tools/build_assets.mjs` | encode les GLB en base64 → `web/src/assets.generated.js` (fichier unique hors-ligne) |
+| `web/src/assets.js` | parsing, normalisation au mètre, indexation des roues, détection des os, animation procédurale |
+| `tools/check_assets.mjs` | 103 vérifications headless : dimensions, roues, squelette, cycle de marche, intégration |
+
+**Contrat de robustesse** : `Assets.makeVehicle()` / `makeCitizen()` renvoient `null` si le modèle
+n'est pas disponible ; chaque système garde alors ses primitives. Un asset corrompu dégrade le
+rendu, jamais la jouabilité. Les axes d'animation sont **mesurés** (et non supposés) en testant
+la rotation de chaque os : le système fonctionne avec n'importe quel rig humanoïde.

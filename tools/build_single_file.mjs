@@ -13,6 +13,7 @@
 
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -30,6 +31,9 @@ try {
   process.exit(1);
 }
 const build = esbuild.build ?? esbuild.default?.build;
+
+// --- 0. Embarquement des modèles 3D (base64) — toujours à jour ---
+execFileSync(process.execPath, [path.join(ROOT, 'tools', 'build_assets.mjs')], { stdio: 'inherit' });
 
 // --- 1. Bundle IIFE : tout le graphe d'imports (dont Three.js) en un script ---
 const result = await build({
@@ -69,6 +73,8 @@ if (html.includes('src="./src/main.js"')) problems.push('module externe encore r
 if (before === html.length) problems.push('aucun remplacement effectué');
 if (!html.includes('<style>')) problems.push('balise <style> absente');
 if (!html.includes('WebGLRenderer')) problems.push('Three.js non inclus dans le bundle');
+if (!html.includes('glTF')) problems.push('modèles 3D absents du bundle');
+if (html.length < 2.5 * 1048576) problems.push('bundle suspicieusement petit (assets manquants ?)');
 // Seules les URI de namespace XML (w3.org) sont tolérées : aucune ressource
 // distante ne doit être chargée par le fichier final.
 const noNamespaces = html.replace(/https?:\/\/www\.w3\.org\/[^'"\s]*/g, '');

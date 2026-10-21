@@ -5,6 +5,7 @@
 // Équivalent UE5 : ACharacter + Enhanced Input + Camera Boom + Possess.
 // ============================================================================
 import * as THREE from 'three';
+import Assets from './assets.js';
 import { Bus, clamp, damp, angleDamp } from './core.js';
 
 // Coin de trottoir a l'intersection (32,32) : garanti sans batiment.
@@ -13,31 +14,35 @@ const SPAWN_HEADING = -2.36;   // face a l'intersection / au centre-ville
 
 function buildPlayerMesh() {
   const g = new THREE.Group();
+  const prim = new THREE.Group(); g.add(prim);   // avatar procédural (secours)
   const jacket = new THREE.MeshStandardMaterial({ color: 0xe67e22, roughness: 0.85 });
   const pants = new THREE.MeshStandardMaterial({ color: 0x22304a, roughness: 0.95 });
   const skin = new THREE.MeshStandardMaterial({ color: 0xe8b48c, roughness: 0.8 });
   const mkLeg = (sx) => {
     const p = new THREE.Group(); p.position.set(sx * 0.11, 0.88, 0);
     const l = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.86, 0.18), pants);
-    l.position.y = -0.43; l.castShadow = true; p.add(l); g.add(p); return p;
+    l.position.y = -0.43; l.castShadow = true; p.add(l); prim.add(p); return p;
   };
   const legL = mkLeg(-1), legR = mkLeg(1);
   const torso = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.6, 0.26), jacket);
-  torso.position.y = 1.18; torso.castShadow = true; g.add(torso);
+  torso.position.y = 1.18; torso.castShadow = true; prim.add(torso);
   const mkArm = (sx) => {
     const p = new THREE.Group(); p.position.set(sx * 0.29, 1.43, 0);
     const a = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.62, 0.14), jacket);
-    a.position.y = -0.29; a.castShadow = true; p.add(a); g.add(p); return p;
+    a.position.y = -0.29; a.castShadow = true; p.add(a); prim.add(p); return p;
   };
   const armL = mkArm(-1), armR = mkArm(1);
   const head = new THREE.Mesh(new THREE.SphereGeometry(0.15, 12, 10), skin);
-  head.position.y = 1.66; head.castShadow = true; g.add(head);
+  head.position.y = 1.66; head.castShadow = true; prim.add(head);
   const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.17, 0.09, 10),
     new THREE.MeshStandardMaterial({ color: 0xc0392b, roughness: 0.8 }));
-  cap.position.y = 1.78; g.add(cap);
+  cap.position.y = 1.78; prim.add(cap);
   const brim = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.03, 0.16), cap.material);
-  brim.position.set(0, 1.75, 0.2); g.add(brim);
-  return { group: g, legL, legR, armL, armR };
+  brim.position.set(0, 1.75, 0.2); prim.add(brim);
+  // avatar 3D réel (riggé) si disponible
+  const rig = Assets.makePlayer();
+  if (rig) { prim.visible = false; g.add(rig.group); }
+  return { group: g, prim, rig, legL, legR, armL, armR };
 }
 
 export class Player {
@@ -174,9 +179,13 @@ export class Player {
     // animation de marche
     const sp = Math.hypot(this.vel.x, this.vel.z);
     this.walkPhase += dt * (2 + sp * 2.4);
-    const sw = this.grounded ? Math.sin(this.walkPhase) * clamp(sp * 0.14, 0, 0.8) : 0.35;
-    this.legL.rotation.x = sw; this.legR.rotation.x = -sw;
-    this.armL.rotation.x = -sw * 0.85; this.armR.rotation.x = sw * 0.85;
+    if (this.rig) {
+      Assets.walkRig(this.rig, this.grounded ? sp : 0, dt, this.walkPhase);
+    } else {
+      const sw = this.grounded ? Math.sin(this.walkPhase) * clamp(sp * 0.14, 0, 0.8) : 0.35;
+      this.legL.rotation.x = sw; this.legR.rotation.x = -sw;
+      this.armL.rotation.x = -sw * 0.85; this.armR.rotation.x = sw * 0.85;
+    }
   }
 
   _updateDriving(dt, ctx) {

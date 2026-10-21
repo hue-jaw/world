@@ -1,7 +1,7 @@
 {
   "name": "metropolis-desktop",
   "productName": "METROPOLIS",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "METROPOLIS - coquille desktop du prototype jouable",
   "main": "main.js",
@@ -21,9 +21,26 @@
   "build": {
     "appId": "com.metropolis.game",
     "productName": "METROPOLIS",
-    "files": ["main.js", "index.html"],
-    "directories": { "output": "release", "buildResources": "." },
-    "win": { "target": [{ "target": "portable", "arch": ["x64"] }] },
-    "portable": { "artifactName": "METROPOLIS-${version}-win64.exe" }
+    "files": [
+      "main.js",
+      "index.html"
+    ],
+    "directories": {
+      "output": "release",
+      "buildResources": "."
+    },
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "portable": {
+      "artifactName": "METROPOLIS-${version}-win64.exe"
+    }
   }
 }

@@ -7,6 +7,7 @@
 import * as THREE from 'three';
 import { CFG, Bus, clamp, lerp, damp, angleDelta, pick, rand, randRange, randInt, VEHICLE_TYPES, randomVehicleType } from './core.js';
 import { DIRS } from './city.js';
+import Assets from './assets.js';
 
 const V3 = () => new THREE.Vector3();
 // Matériau partagé : halo de phares au sol (piloté globalement jour/nuit)
@@ -23,9 +24,24 @@ function buildVehicleMesh(typeName) {
   const color = pick(t.colors);
   const g = new THREE.Group();
   const paint = new THREE.MeshStandardMaterial({ color, roughness: 0.32, metalness: 0.55 });
-  const wheelR = typeName === 'SUV' || typeName === 'Utilitaire' ? 0.38 : 0.33;
-  const bodyY = wheelR + t.bodyH / 2 - 0.06;
 
+  // Modèle 3D (Kenney, CC0) si la bibliothèque est chargée ; sinon les
+  // primitives ci-dessous prennent le relais — le jeu ne casse jamais.
+  const model = Assets.makeVehicle(typeName);
+  let wheelR = typeName === 'SUV' || typeName === 'Utilitaire' ? 0.38 : 0.33;
+  let bodyY = 0.8;
+  let roofY = 1.4;
+  let wheels = [];
+  let frontPivots = [];
+
+  if (model) {
+    g.add(model.group);
+    wheels = model.wheels;
+    frontPivots = model.frontWheels;
+    wheelR = model.wheelRadius;
+    roofY = model.height;
+    bodyY = model.height * 0.42;
+  } else {
   const body = new THREE.Mesh(new THREE.BoxGeometry(t.wid, t.bodyH, t.len), paint);
   body.position.y = bodyY; body.castShadow = true; g.add(body);
   // nez légèrement abaissé (capot)
@@ -52,6 +68,9 @@ function buildVehicleMesh(typeName) {
     const shield = new THREE.Mesh(new THREE.BoxGeometry(t.wid * 0.86, 0.55, 0.08), glassMat);
     shield.position.set(0, bodyY + t.bodyH * 0.18, t.len / 2 - 0.3); shield.rotation.x = -0.28; g.add(shield);
   }
+  bodyY = wheelR + t.bodyH / 2 - 0.06;
+  roofY = bodyY + t.bodyH / 2 + t.cabinH;
+  }
 
   // Phares / feux stop (matériaux individuels : intensité par véhicule)
   const headMat = new THREE.MeshStandardMaterial({ color: 0xfff6d8, emissive: 0xffedb5, emissiveIntensity: 0.25 });
@@ -65,17 +84,19 @@ function buildVehicleMesh(typeName) {
   const glow = new THREE.Mesh(new THREE.PlaneGeometry(t.wid * 1.7, 8), headlightGlowMat);
   glow.rotation.x = -Math.PI / 2; glow.position.set(0, 0.06, t.len / 2 + 3.6); g.add(glow);
 
-  // Roues (pivots avant pour le braquage)
-  const wheels = [], frontPivots = [];
-  const wheelGeo = new THREE.CylinderGeometry(wheelR, wheelR, 0.26, 14);
-  const hubGeo = new THREE.CylinderGeometry(wheelR * 0.5, wheelR * 0.5, 0.28, 8);
-  const wz = t.len / 2 - 0.95, wx = t.wid / 2 - 0.1;
-  for (const [sx, sz, front] of [[-1, 1, 1], [1, 1, 1], [-1, -1, 0], [1, -1, 0]]) {
-    const pivot = new THREE.Group(); pivot.position.set(sx * wx, wheelR, sz * wz);
-    const wheel = new THREE.Mesh(wheelGeo, tireMat); wheel.rotation.z = Math.PI / 2; wheel.castShadow = true;
-    const hub = new THREE.Mesh(hubGeo, hubMat); hub.rotation.z = Math.PI / 2; wheel.add(hub);
-    pivot.add(wheel); g.add(pivot);
-    wheels.push(wheel); if (front) frontPivots.push(pivot);
+  // Roues procédurales — uniquement si aucun modèle 3D n'est disponible
+  // (les modèles fournissent leurs propres nœuds de roue, déjà indexés)
+  if (!model) {
+    const wheelGeo = new THREE.CylinderGeometry(wheelR, wheelR, 0.26, 14);
+    const hubGeo = new THREE.CylinderGeometry(wheelR * 0.5, wheelR * 0.5, 0.28, 8);
+    const wz = t.len / 2 - 0.95, wx = t.wid / 2 - 0.1;
+    for (const [sx, sz, front] of [[-1, 1, 1], [1, 1, 1], [-1, -1, 0], [1, -1, 0]]) {
+      const pivot = new THREE.Group(); pivot.position.set(sx * wx, wheelR, sz * wz);
+      const wheel = new THREE.Mesh(wheelGeo, tireMat); wheel.rotation.z = Math.PI / 2; wheel.castShadow = true;
+      const hub = new THREE.Mesh(hubGeo, hubMat); hub.rotation.z = Math.PI / 2; wheel.add(hub);
+      pivot.add(wheel); g.add(pivot);
+      wheels.push(wheel); if (front) frontPivots.push(pivot);
+    }
   }
 
   // Gyrophares police
@@ -83,7 +104,7 @@ function buildVehicleMesh(typeName) {
   if (t.police) {
     beacon = { mats: [], light: null };
     const bar = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.09, 0.4), new THREE.MeshStandardMaterial({ color: 0x222 }));
-    bar.position.set(0, bodyY + t.bodyH / 2 + t.cabinH + 0.14, -t.len * 0.04); g.add(bar);
+    bar.position.set(0, roofY + 0.10, -t.len * 0.04); g.add(bar);
     for (const [sx, col] of [[-1, 0x2255ff], [1, 0xff2222]]) {
       const m = new THREE.MeshStandardMaterial({ color: col, emissive: col, emissiveIntensity: 0 });
       const b = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.17, 0.34), m);

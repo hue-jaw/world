@@ -20,7 +20,7 @@ npm install            # une seule fois (three + esbuild)
 npm start              # http://localhost:8000
 ```
 
-**Contenu jouable :** personnage 3e personne · 7 types de véhicules conduisibles · trafic IA qui respecte feux et voies · 44 PNJ avec routines quotidiennes · cycle jour/nuit complet · météo dynamique (pluie, orage, brouillard) aux effets gameplay réels · police avec poursuites et arrestations · missions de livraison chronométrées · minimap/boussole · sauvegarde automatique · audio 100 % procédural.
+**Contenu jouable :** personnage 3e personne **modélisé et animé** · 7 types de véhicules **modélisés** (roues qui tournent et braquent) · trafic IA qui respecte feux et voies · 44 PNJ **modélisés** avec routines quotidiennes · cycle jour/nuit complet · météo dynamique (pluie, orage, brouillard) aux effets gameplay réels · police avec poursuites et arrestations · missions de livraison chronométrées · minimap/boussole · sauvegarde automatique · audio 100 % procédural.
 
 | Touche | Action |
 |---|---|
@@ -34,10 +34,24 @@ npm start              # http://localhost:8000
 ## 🧪 Tests & build
 
 ```bash
-npm test        # 17 vérifications headless (ville, trafic, PNJ, mission,
-                # conduite, police, météo, jour/nuit, sauvegarde)
+npm test        # 17 vérifs simulation + 103 vérifs modèles 3D
 npm run build   # régénère METROPOLIS.html (fichier unique, double-cliquable)
 ```
+
+## 🎨 Modèles 3D (CC0, embarqués)
+
+Les personnages, véhicules et l'avatar du joueur sont de **vrais modèles 3D** depuis la v0.2, embarqués dans le bundle (aucun téléchargement au lancement) :
+
+| Contenu | Source | Licence | Traitement |
+|---|---|---|---|
+| 7 véhicules (citadine, berline, SUV, sportive, taxi, utilitaire, police) | Kenney « Car Kit » | **CC0** | quantification, textures PNG 256 px, roues indexées |
+| 5 citoyens + joueur | Quaternius « Ultimate Modular Men » | **CC0** | quantification, palette fusionnée, **animation procédurale du squelette** |
+
+- Détails et fichiers : [`web/assets/LICENSES.md`](web/assets/LICENSES.md)
+- Les modèles sont **normalisés au mètre** à l'exécution : longueur = physique du véhicule, pieds au sol, avant vers +Z.
+- Les animations de marche/idle sont **calculées sur les os** (les packs CC0 n'en fournissent pas) : hanches en opposition de phase, genoux fléchis, bras le long du corps.
+- Si un modèle manque, chaque système **retombe automatiquement** sur ses primitives : le jeu ne casse jamais.
+- Pour ajouter un modèle : déposer le `.glb` dans `web/assets/models/`, l'associer dans `web/src/assets.js`, puis `npm run build`.
 
 ## 🏗️ Produit cible : Unreal Engine 5.5
 
@@ -57,6 +71,7 @@ npm run build   # régénère METROPOLIS.html (fichier unique, double-cliquable)
 ```
 METROPOLIS.html   Le jeu entier en un fichier, double-cliquable (généré)
 /web              Sources de la vertical slice (modules ES + serveur de dev)
+  assets/models   Modèles 3D CC0 (.glb) + LICENSES.md
 /desktop          Coquille Electron → METROPOLIS.exe portable
 /unreal           Projet Unreal Engine 5.5 (produit AAA cible)
 /docs             Décisions · architecture · plan · risques & performance

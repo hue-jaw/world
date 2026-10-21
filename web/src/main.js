@@ -15,6 +15,7 @@ import { MissionSystem } from './missions.js';
 import { AudioSys } from './audio.js';
 import { UI } from './ui.js';
 import { SaveSystem } from './save.js';
+import Assets from './assets.js';
 
 window.addEventListener('error', (e) => {
   const el = document.getElementById('loading');
@@ -24,6 +25,8 @@ window.addEventListener('error', (e) => {
   }
   console.error(e.error || e.message);
 });
+
+async function boot() {
 
 // ------------------------------- Renderer ----------------------------------
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
@@ -50,6 +53,18 @@ addEventListener('resize', () => {
 const save = SaveSystem.load();
 
 // -------------------------------- Systèmes ---------------------------------
+// Modèles 3D (CC0) : chargés AVANT les systèmes pour qu'ils naissent avec
+// leur apparence définitive. En cas d'échec, chaque système retombe sur ses
+// primitives procédurales (aucun écran noir possible).
+const loadEl = document.getElementById('loading');
+if (loadEl) loadEl.textContent = 'Chargement des modèles 3D…';
+// Jamais bloquant : si un modèle est illisible, on joue avec les primitives.
+try {
+  await Assets.init();
+} catch (err) {
+  console.warn('[METROPOLIS] modèles 3D indisponibles, rendu de secours :', err);
+}
+
 const city = new City(scene);
 const env = new Environment(scene, city);
 const audio = new AudioSys();
@@ -208,3 +223,15 @@ function loop() {
   }
 }
 loop();
+}
+
+// Démarrage : le chargement des assets est asynchrone (parsing GLB), tout le
+// reste de l'initialisation se fait ensuite, de façon séquentielle.
+boot().catch((err) => {
+  console.error('[METROPOLIS] démarrage :', err);
+  const el = document.getElementById('loading');
+  if (el) {
+    el.textContent = '⚠ Impossible de démarrer : ' + (err?.message ?? err);
+    el.style.display = 'flex';
+  }
+});

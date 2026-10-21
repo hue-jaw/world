@@ -17,6 +17,11 @@ class FakeCanvas {
   constructor() { this.width = 256; this.height = 256; }
   getContext() { return ctx2dStub; }
 }
+globalThis.self = globalThis;              // GLTFLoader se croit dans un worker
+globalThis.Image = class {                 // pas de décodeur d'images sous Node
+  constructor() { this.onload = null; this.onerror = null; }
+  set src(_v) { setTimeout(() => this.onerror && this.onerror(new Error('no image in node')), 0); }
+};
 globalThis.window = globalThis;
 globalThis.addEventListener = () => {};
 globalThis.document = {

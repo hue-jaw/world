@@ -23,3 +23,6 @@ METROPOLIS.html
 desktop/index.html
 desktop/release/
 desktop/node_modules/
+
+# Généré par tools/build_assets.mjs (modèles encodés en base64)
+web/src/assets.generated.js

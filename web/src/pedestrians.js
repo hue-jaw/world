@@ -7,6 +7,7 @@
 // ============================================================================
 import * as THREE from 'three';
 import { CFG, Bus, clamp, damp, angleDamp, pick, rand, randRange, randInt, chance } from './core.js';
+import Assets from './assets.js';
 
 const FIRST = ['Léa', 'Hugo', 'Emma', 'Louis', 'Jade', 'Noah', 'Chloé', 'Lucas', 'Mia', 'Adam', 'Sarah', 'Karim', 'Inès', 'Théo', 'Awa', 'Kenji', 'Maria', 'Ivan', 'Zoé', 'Mehdi'];
 const LAST = ['Martin', 'Bernard', 'Dubois', 'Moreau', 'Laurent', 'Diallo', 'Garcia', 'Rossi', 'Kowalski', 'Tanaka', 'Haddad', 'Petit', 'Leroy', 'Fontaine'];
@@ -16,32 +17,33 @@ const SKIN = [0xf2c9a4, 0xe0ac84, 0xc68863, 0x8d5524, 0x6b3f22, 0xffdcb8];
 const CLOTH = [0xc0392b, 0x2471a3, 0x229954, 0xf39c12, 0x8e44ad, 0x566573, 0xd4ac0d, 0xba4a00, 0x148f77, 0x7d3c98, 0x2e4053, 0xca6f1e, 0xecf0f1];
 const PANTS = [0x2c3e50, 0x1a1a2e, 0x5d4037, 0x616a6b, 0x283747, 0x4d5656];
 
-function buildPedMesh() {
+function buildPedMesh(variant = 0) {
   const g = new THREE.Group();
+  const prim = new THREE.Group(); g.add(prim);   // corps procédural (secours)
   const skin = new THREE.MeshStandardMaterial({ color: pick(SKIN), roughness: 0.8 });
   const cloth = new THREE.MeshStandardMaterial({ color: pick(CLOTH), roughness: 0.9 });
   const pants = new THREE.MeshStandardMaterial({ color: pick(PANTS), roughness: 0.95 });
   const mkLeg = (sx) => {
     const pivot = new THREE.Group(); pivot.position.set(sx * 0.11, 0.86, 0);
     const leg = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.84, 0.17), pants);
-    leg.position.y = -0.42; leg.castShadow = true; pivot.add(leg); g.add(pivot);
+    leg.position.y = -0.42; leg.castShadow = true; pivot.add(leg); prim.add(pivot);
     return pivot;
   };
   const legL = mkLeg(-1), legR = mkLeg(1);
   const torso = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.58, 0.24), cloth);
-  torso.position.y = 1.15; torso.castShadow = true; g.add(torso);
+  torso.position.y = 1.15; torso.castShadow = true; prim.add(torso);
   const mkArm = (sx) => {
     const pivot = new THREE.Group(); pivot.position.set(sx * 0.28, 1.4, 0);
     const arm = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.6, 0.13), cloth);
-    arm.position.y = -0.28; arm.castShadow = true; pivot.add(arm); g.add(pivot);
+    arm.position.y = -0.28; arm.castShadow = true; pivot.add(arm); prim.add(pivot);
     return pivot;
   };
   const armL = mkArm(-1), armR = mkArm(1);
   const head = new THREE.Mesh(new THREE.SphereGeometry(0.145, 10, 9), skin);
-  head.position.y = 1.62; head.castShadow = true; g.add(head);
+  head.position.y = 1.62; head.castShadow = true; prim.add(head);
   const hair = new THREE.Mesh(new THREE.SphereGeometry(0.15, 10, 6, 0, Math.PI * 2, 0, 1.5),
     new THREE.MeshStandardMaterial({ color: pick([0x2b1d12, 0x4a2f1a, 0x8a6d3b, 0xd9c9a3, 0x111111, 0x777777]), roughness: 1 }));
-  hair.position.y = 1.645; g.add(hair);
+  hair.position.y = 1.645; prim.add(hair);
   // parapluie (affiché sous la pluie)
   const umbrella = new THREE.Group();
   const canopy = new THREE.Mesh(new THREE.ConeGeometry(0.72, 0.3, 8),
@@ -51,7 +53,16 @@ function buildPedMesh() {
     new THREE.MeshStandardMaterial({ color: 0x333333 }));
   stick.position.y = 0.24; umbrella.add(stick);
   umbrella.position.set(0.24, 1.62, 0.08); umbrella.visible = false; g.add(umbrella);
-  return { group: g, legL, legR, armL, armR, umbrella };
+
+  // Modèle 3D riggé si disponible : on masque les primitives (jamais détruites,
+  // elles resservent si les assets n'ont pas pu être chargés).
+  const rig = Assets.makeCitizen(variant);
+  if (rig) {
+    prim.visible = false;
+    g.add(rig.group);
+    umbrella.position.y = rig.height * 0.94;
+  }
+  return { group: g, prim, rig, legL, legR, armL, armR, umbrella };
 }
 
 class Citizen {
@@ -65,7 +76,7 @@ class Citizen {
     this.home = city.randomBuilding('home');
     this.work = city.randomBuilding('work');
     this.hasUmbrella = chance(0.6);
-    Object.assign(this, buildPedMesh());
+    Object.assign(this, buildPedMesh(id));
     scene.add(this.group);
     this.pos = this.group.position;
     this.heading = rand() * Math.PI * 2;
@@ -173,13 +184,21 @@ class Citizen {
 
     // animation procédurale de marche (seulement si proche : LOD)
     const dp = Math.abs(this.pos.x - ctx.playerPos().x) + Math.abs(this.pos.z - ctx.playerPos().z);
-    if (dp < 110) {
+    if (dp < 130) {
       this.walkPhase += dt * (2.2 + this.speed * 2.6);
-      const sw = Math.sin(this.walkPhase) * clamp(this.speed * 0.32, 0, 0.75);
-      this.legL.rotation.x = sw; this.legR.rotation.x = -sw;
-      this.armL.rotation.x = -sw * 0.8; this.armR.rotation.x = sw * 0.8;
-      this.group.position.y = this.pos.y + Math.abs(Math.sin(this.walkPhase)) * 0.035 * clamp(this.speed, 0, 1.6);
+      if (this.rig) {
+        // modèle squeletté : cycle de marche calculé sur les os
+        Assets.walkRig(this.rig, this.speed, dt, this.walkPhase);
+        this.group.position.y = this.pos.y + Math.abs(Math.sin(this.walkPhase)) * 0.022 * clamp(this.speed, 0, 1.6);
+      } else {
+        const sw = Math.sin(this.walkPhase) * clamp(this.speed * 0.32, 0, 0.75);
+        this.legL.rotation.x = sw; this.legR.rotation.x = -sw;
+        this.armL.rotation.x = -sw * 0.8; this.armR.rotation.x = sw * 0.8;
+        this.group.position.y = this.pos.y + Math.abs(Math.sin(this.walkPhase)) * 0.035 * clamp(this.speed, 0, 1.6);
+      }
     }
+    // LOD de rendu : au-delà de 180 m, plus de dessin (mais la simulation continue)
+    this.group.visible = this.visible && dp < 180;
   }
   paceFactor() { return this._pace ??= randRange(0.85, 1.2); }
   arrive(ctx) {

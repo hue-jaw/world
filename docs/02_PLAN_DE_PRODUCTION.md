@@ -82,3 +82,16 @@ Objectif : la même boucle de jeu dans Unreal, assets placeholder (cubes/capsule
 | 4 | `L_TestBlock` UE5 : ZoneGraph 3×3 + 1 Chaos Vehicle conduisible | portage | conduire un tour de bloc |
 | 5 | Brancher les mêmes constantes d'équilibrage (depuis `core.js`) en Data Assets | data | parité de comportement web/UE5 |
 | 6 | Décider de la cible matérielle min (GPU/CPU) → fige les budgets §03 | direction technique | doc §03 mis à jour |
+
+### Phase 1 ter — Assets 3D réels (livrée en v0.2)
+
+| Livrable | État | Critère de sortie |
+|---|---|---|
+| 7 véhicules modélisés + roues animées | ✅ | longueur = physique ±6 %, 4 roues, 2 avant braquantes |
+| 5 citoyens + joueur riggés | ✅ | os trouvés, bras le long du corps, pieds alternés au cycle |
+| Animation procédurale de marche | ✅ | foule de 44 animée < 1 ms/frame |
+| Embarquement hors-ligne | ✅ | bundle unique 3,85 Mo, 0 requête réseau |
+| Repli primitives | ✅ | `makeVehicle() → null` géré par tous les systèmes |
+
+Reste à faire (prochaine itération) : bâtiments modélisés (Kenney City Kit), mobilier urbain
+(lampadaires, feux, panneaux), véhicules d'urgence (ambulance, camion de pompiers).
