@@ -7,7 +7,7 @@ Un jeu open-world 3D en construction : une métropole fictive où le trafic, les
 ### Option 1 — double-clic, zéro installation *(le plus simple)*
 Téléchargez **`METROPOLIS.html`** et **double-cliquez dessus**. Le jeu complet s'ouvre dans votre navigateur, hors-ligne, sans serveur. `F11` = plein écran. La sauvegarde est automatique.
 
-> Ce fichier regroupe le jeu, les styles et Three.js en un seul document (563 Ko). Pour le régénérer : `npm run build` à la racine.
+> Ce fichier regroupe le jeu, les styles et Three.js en un seul document (4,0 Mo — modèles 3D et textures embarqués). Pour le régénérer : `npm run build` à la racine.
 
 ### Option 2 — exécutable Windows `.exe`
 **[⬇ Télécharger METROPOLIS.exe](https://github.com/hue-jaw/world/releases/latest)** — portable, sans installation, sans droits administrateur, 100 % hors-ligne. Construit automatiquement par GitHub Actions à chaque mise à jour.
@@ -38,9 +38,32 @@ npm start              # http://localhost:8000
 ## 🧪 Tests & build
 
 ```bash
-npm test        # 19 (simulation) + 30 (fonctionnalités) + 15 (intégration) + 112 (assets 3D)
+npm test        # 19 (simulation) + 42 (fonctionnalités) + 15 (intégration) + 112 (assets 3D)
 npm run build   # régénère METROPOLIS.html (fichier unique, double-cliquable)
 ```
+
+## 🎨 Textures HD & animations (v0.3.1)
+
+- **Textures full HD procédurales**, zéro asset externe : façades **1024²**
+  (albédo jour + émissive nuit + relief), sol de la métropole **2048²**
+  (32 px/m), asphalte 1024², trottoirs et herbe 512². Détail métrique
+  supplémentaire (256 px/m) branché dans un shader, sans coût par frame.
+- **Pneus parfaitement circulaires** : rayons mesurés sur modèle non étiré,
+  échelle uniforme appliquée aux pivots. Vérifié au repos et en rotation.
+- **Marche et course distinctes** : un cycle paramétré par la vitesse
+  (amplitude de hanche 0,44 → 0,80 rad, coudes 0,10 → 1,15 rad, buste incliné,
+  rebond 1,8 → 7 cm), cadence asservie à la distance parcourue donc sans
+  glissement de pieds. Transition continue, sans à-coup.
+
+Détails techniques et mesures : [`docs/04_TEXTURES_ET_ANIMATIONS_HD.md`](docs/04_TEXTURES_ET_ANIMATIONS_HD.md)
+et budget mémoire dans [`docs/03`](docs/03_RISQUES_ET_PERFORMANCE.md).
+
+| Aperçu | Fichier |
+|---|---|
+| Planche de textures | `previews/textures.png` |
+| Sol vu à hauteur d'œil | `previews/ground_eye.png` |
+| Véhicules (cercles de contrôle) | `previews/cars.png` |
+| Cycles marche / course | `previews/chars.png` |
 
 ## 🌍 Le monde (v0.3)
 

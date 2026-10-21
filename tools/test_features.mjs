@@ -41,6 +41,7 @@ const GPSSystem = (await import('../web/src/gps.js')).default;
 const { GamepadInput } = await import('../web/src/input.js');
 const { Environment } = await import('../web/src/environment.js');
 const { Player } = await import('../web/src/player.js');
+const Assets = (await import('../web/src/assets.js')).default;
 
 let passed = 0; const fails = [];
 const check = (label, fn) => {
@@ -179,6 +180,125 @@ check('dégâts réduisent la santé', () => { player.damage(35, {}, 'test'); as
 check('santé bornée à 0', () => { player.damage(999, {}, 'test'); assert.equal(player.health, 0); });
 check('soins', () => { player.heal(50); assert.equal(player.health, 50); });
 check('caméra automatique active par défaut', () => assert.equal(player.autoCam, true));
+
+console.log('— Textures HD et shaders de sol —');
+const texMod = await import('../web/src/textures.js');
+check('facade 1024² (full HD)', () => {
+  const { day } = texMod.facade('brick', 'mid', 0);
+  assert.equal(day.image.width, 1024);
+});
+check('façade : carte de nuit + relief fournis', () => {
+  const f = texMod.facade('glass', 'high', 1);
+  assert(f.night && f.night.image, 'emissiveMap manquante');
+  assert(f.bump && f.bump.image, 'bumpMap manquante');
+});
+check('sol métropole 2048² (32 px/m)', () => {
+  const m = texMod.metroGroundHD();
+  assert.equal(m.map.image.width, 2048);
+  assert.equal(m.map.image.width / 64, 32);   // 64 m par tuile
+});
+check('texture de détail en échelle métrique', () => {
+  const d = texMod.groundDetailHD('asphalt');
+  assert.equal(d.image.width, 512);
+  assert.equal(d.userData.tileMeters, 2);
+});
+check('textures mutualisées (cache) : pas de duplication mémoire', () => {
+  const a = texMod.facade('brick', 'mid', 0);
+  const b = texMod.facade('brick', 'mid', 0);
+  assert(a === b && a.day === b.day, 'la façade est régénérée à chaque appel');
+  assert(texMod.metroGroundHD() === texMod.metroGroundHD(), 'le sol est régénéré');
+});
+check('shaders de sol : déclarations complètes et accolades équilibrées', () => {
+  const lib = THREE.ShaderLib.physical;
+  let n = 0;
+  const seen = new Set();
+  const bal = (str) => (str.match(/{/g) || []).length - (str.match(/}/g) || []).length;
+  scene.traverse((o) => {
+    if (!o.isMesh && !o.isInstancedMesh) return;
+    const mats = Array.isArray(o.material) ? o.material : [o.material];
+    for (const m of mats) {
+      if (!m || seen.has(m.uuid)) continue;
+      if (typeof m.onBeforeCompile !== 'function') continue;
+      if (!m.userData.detailTex && !m.userData.uvRepeat) continue;
+      seen.add(m.uuid);
+      const shader = { uniforms: {}, vertexShader: lib.vertexShader, fragmentShader: lib.fragmentShader };
+      m.onBeforeCompile(shader, null);
+      n++;
+      if (m.userData.detailTex) {
+        assert(shader.fragmentShader.includes('uniform sampler2D uDetail'), 'uDetail non déclaré');
+        assert(shader.vertexShader.includes('varying vec3 vWorldPosD'), 'varying manquant');
+      }
+      if (m.userData.uvRepeat) {
+        assert(shader.vertexShader.includes('vMapUv *= uUvRepeat'), 'répétition UV perdue (hook écrasé)');
+      }
+      assert.equal(bal(shader.vertexShader), 0, 'accolades vertex déséquilibrées');
+      assert.equal(bal(shader.fragmentShader), 0, 'accolades fragment déséquilibrées');
+    }
+  });
+  assert(n >= 3, `seulement ${n} matériaux à hook`);
+});
+
+console.log('— Locomotion marche / course —');
+const locoRig = () => ({
+  legs: [{ bone: new THREE.Object3D(), rest: new THREE.Quaternion(), axis: new THREE.Vector3(1, 0, 0), sign: 1 },
+         { bone: new THREE.Object3D(), rest: new THREE.Quaternion(), axis: new THREE.Vector3(1, 0, 0), sign: -1 }],
+  knees: [{ bone: new THREE.Object3D(), rest: new THREE.Quaternion(), axis: new THREE.Vector3(1, 0, 0), sign: 1 },
+          { bone: new THREE.Object3D(), rest: new THREE.Quaternion(), axis: new THREE.Vector3(1, 0, 0), sign: -1 }],
+  arms: [{ bone: new THREE.Object3D(), rest: new THREE.Quaternion(), axis: new THREE.Vector3(1, 0, 0), sign: 1 },
+         { bone: new THREE.Object3D(), rest: new THREE.Quaternion(), axis: new THREE.Vector3(1, 0, 0), sign: -1 }],
+  elbows: [{ bone: new THREE.Object3D(), rest: new THREE.Quaternion(), axis: new THREE.Vector3(1, 0, 0), sign: 1 },
+           { bone: new THREE.Object3D(), rest: new THREE.Quaternion(), axis: new THREE.Vector3(1, 0, 0), sign: -1 }],
+  spine: { bone: new THREE.Object3D(), rest: new THREE.Quaternion(), axis: new THREE.Vector3(1, 0, 0), sign: 1 },
+  hipsBone: { bone: new THREE.Object3D(), rest: new THREE.Quaternion(), axis: new THREE.Vector3(1, 0, 0), sign: 1 },
+  bones: {},
+});
+/** Amplitude d'un os (angle par rapport à sa pose de repos). */
+const swingOf = (entry) => 2 * Math.acos(Math.min(1, Math.abs(entry.bone.quaternion.w)));
+const amplify = (rig) => Math.max(
+  ...rig.legs.map(swingOf), ...rig.arms.map(swingOf), ...rig.knees.map(swingOf));
+check('course : amplitude nettement supérieure à la marche', () => {
+  const walk = locoRig(); Assets.animateRig(walk, 1.4, 1 / 60, Math.PI / 2, 1 / 60);
+  const run = locoRig(); Assets.animateRig(run, 6.0, 1 / 60, Math.PI / 2, 1 / 60);
+  const aw = amplify(walk), ar = amplify(run);
+  assert(ar > aw * 1.4, `amplitude marche ${aw.toFixed(3)} vs course ${ar.toFixed(3)}`);
+});
+check('course : coudes pliés, marche : coudes quasi tendus', () => {
+  const walk = locoRig(); Assets.animateRig(walk, 1.4, 1 / 60, 0, 1 / 60);
+  const run = locoRig(); Assets.animateRig(run, 6.0, 1 / 60, 0, 1 / 60);
+  const ew = swingOf(walk.elbows[0]), er = swingOf(run.elbows[0]);
+  assert(er > 0.9 && ew < 0.35, `coude marche ${ew.toFixed(2)} / course ${er.toFixed(2)}`);
+});
+check('transition continue marche <-> course (pas de saut)', () => {
+  const amp = (v) => { const r = locoRig(); Assets.animateRig(r, v, 1 / 60, 0.7, 1 / 60); return amplify(r); };
+  const a = amp(3.2), b = amp(3.3);
+  assert(Math.abs(a - b) < 0.05, `saut de ${Math.abs(a - b).toFixed(3)} rad`);
+});
+check('cadence indépendante du framerate (pas de glissement de pieds)', () => {
+  // parcourir la même distance doit produire la même phase, que le pas de
+  // temps soit gros ou petit : sinon la cadence dépend des FPS.
+  const big = Assets.advancePhase(0, 4, 0.5);
+  let small = 0;
+  for (let i = 0; i < 500; i++) small = Assets.advancePhase(small, 4, 0.001);
+  const d = Math.abs(big - small);
+  assert(d < 1e-9, `écart ${d.toExponential(2)} rad`);
+});
+check('cadence : une foulée parcourt bien strideLength mètres', () => {
+  // 1 cycle = 2π ; on vérifie la distance parcourue par cycle.
+  const v = 3.5, dt = 0.5;                            // < 1 cycle : pas de repli modulo
+  const phase = Assets.advancePhase(0, v, dt);
+  const cycles = phase / (2 * Math.PI);
+  const metresPerCycle = (v * dt) / cycles;
+  const expected = Assets.strideLength(v);
+  assert(Math.abs(metresPerCycle - expected) < 1e-6,
+    `${metresPerCycle.toFixed(3)} m vs ${expected.toFixed(3)} m attendus`);
+});
+check('rebond : haut jambes jointes, bas jambes écartées, jamais négatif', () => {
+  const r1 = locoRig(); const b1 = Assets.animateRig(r1, 5, 1 / 60, 0, 1 / 60);
+  const r2 = locoRig(); const b2 = Assets.animateRig(r2, 5, 1 / 60, Math.PI / 2, 1 / 60);
+  assert(b1 > b2, `rebond jambes jointes ${b1.toFixed(3)} vs écartées ${b2.toFixed(3)}`);
+  assert(Math.abs(b2) < 1e-9, `rebond non nul jambes écartées : ${b2}`);
+  assert(b1 > 0, 'rebond nul jambes jointes');
+});
 
 console.log(`\n${fails.length ? '❌' : '✅'} FEATURES : ${passed} vérifications réussies, ${fails.length} échec(s).`);
 if (fails.length) { fails.forEach((f) => console.log('   ✗ ' + f)); process.exit(1); }

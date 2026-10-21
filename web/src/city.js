@@ -6,6 +6,7 @@
 // ============================================================================
 import * as THREE from 'three';
 import { CFG, rand, randRange, randInt, pick, chance, districtForBlock, DISTRICTS, clamp } from './core.js';
+import { facade as facadeHD, asphaltHD, sidewalkHD, grassHD, metroGroundHD, groundDetailHD } from './textures.js';
 
 const { blocksPerSide: N, pitch: P, platformSize: PLAT, buildZone: BZ, laneOffset } = CFG.city;
 export const WORLD_HALF = (N * P) / 2;                 // 224 m
@@ -32,69 +33,46 @@ const RING = 2048, RING_W = 30, RADIAL_W = 26;
 const CIRCUIT = { x: 2400, z: 2400, r: 168, w: 22 };
 
 // ------------------------- Textures procédurales ----------------------------
-// Façades dessinées sur canvas : map jour + emissiveMap nuit alignées.
-// Zéro asset externe, faible coût mémoire, fenêtres allumées la nuit.
-const facadeCache = new Map();
+// Façades HAUTE DÉFINITION : 1024² (512² pour les petits bâtiments), albédo
+// jour + émissive nuit + carte de relief, générées une fois puis partagées.
 const windowMaterials = [];   // matériaux dont l'émissif est piloté jour/nuit
 
-function facadeTextures(palette, band) {
-  const key = palette + ':' + band;
-  if (facadeCache.has(key)) return facadeCache.get(key);
-  const W = 256, H = 256;
-  const day = document.createElement('canvas'); day.width = W; day.height = H;
-  const night = document.createElement('canvas'); night.width = W; night.height = H;
-  const d = day.getContext('2d'), n = night.getContext('2d');
-  const pal = {
-    glass:     { wall: '#3d546e', win: '#a8c6dd', litRate: 0.42 },
-    office:    { wall: '#6b7280', win: '#2c3846', litRate: 0.30 },
-    brick:     { wall: '#7a4636', win: '#2a3238', litRate: 0.38 },
-    oldbrick:  { wall: '#5d4a41', win: '#232a2e', litRate: 0.26 },
-    plaster:   { wall: '#b8a98e', win: '#33404c', litRate: 0.40 },
-    shop:      { wall: '#8b93a1', win: '#2c3846', litRate: 0.45 },
-    house:     { wall: '#a89a84', win: '#33404c', litRate: 0.5 },
-    warehouse: { wall: '#767c85', win: '#39424c', litRate: 0.12 },
-  }[palette] || { wall: '#777', win: '#333', litRate: 0.3 };
-
-  d.fillStyle = pal.wall; d.fillRect(0, 0, W, H);
-  // salissures / variation verticale
-  for (let i = 0; i < 260; i++) {
-    d.fillStyle = `rgba(${randInt(0, 40)},${randInt(0, 40)},${randInt(0, 40)},${randRange(0.03, 0.1)})`;
-    d.fillRect(rand() * W, rand() * H, randRange(4, 26), randRange(3, 16));
+/**
+ * @param {string} palette  palette de façade (core.js)
+ * @param {number} height   hauteur de l'immeuble (m) -> étage/bande
+ * @param {number} variant  0..1, DOIT être déterministe (dérivé de x/z) :
+ *                          utiliser rand() ici décalerait toute la génération
+ *                          de la ville et casserait la reproductibilité de
+ *                          la seed. 2 variantes suffisent (budget mémoire).
+ */
+const facadeMatCache = new Map();
+let roofMatShared = null;
+/** Matériau de toiture partagé par tous les bâtiments (1 seul programme). */
+function getRoofMaterial() {
+  if (!roofMatShared) {
+    roofMatShared = new THREE.MeshStandardMaterial({ color: 0x3c4046, roughness: 1 });
   }
-  n.fillStyle = '#000'; n.fillRect(0, 0, W, H);
-
-  const rows = band === 'low' ? 3 : band === 'mid' ? 8 : 18;
-  const cols = palette === 'warehouse' ? 4 : band === 'low' ? 4 : 8;
-  const cw = W / cols, ch = H / rows;
-  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
-    if (palette === 'shop' && r === rows - 1) continue; // vitrine RDC traitée après
-    const x = c * cw + cw * 0.22, y = r * ch + ch * 0.22, w = cw * 0.56, h = ch * 0.56;
-    const shade = randRange(-14, 14);
-    d.fillStyle = pal.win; d.globalAlpha = 0.92; d.fillRect(x, y, w, h); d.globalAlpha = 1;
-    d.fillStyle = `rgba(255,255,255,${randRange(0.04, 0.16)})`; d.fillRect(x, y, w, h * 0.4);
-    if (rand() < pal.litRate) {
-      const warm = chance(0.78);
-      n.fillStyle = warm ? `rgb(255,${195 + randInt(0, 40)},${110 + randInt(0, 40)})` : 'rgb(190,215,255)';
-      n.globalAlpha = randRange(0.75, 1); n.fillRect(x, y, w, h); n.globalAlpha = 1;
-    }
-    void shade;
-  }
-  if (palette === 'shop') { // grande vitrine + enseigne au RDC
-    const y = H - ch;
-    d.fillStyle = '#1d2733'; d.fillRect(cw * 0.3, y + ch * 0.25, W - cw * 0.6, ch * 0.7);
-    d.fillStyle = pick(['#e63946', '#f4a261', '#2a9d8f', '#e9c46a', '#4361ee']); d.fillRect(0, y - 7, W, 9);
-    n.fillStyle = 'rgb(255,220,150)'; n.globalAlpha = 0.95; n.fillRect(cw * 0.3, y + ch * 0.25, W - cw * 0.6, ch * 0.7); n.globalAlpha = 1;
-  }
-  const mk = (cv) => { const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t; };
-  const out = { map: mk(day), emissiveMap: mk(night) };
-  facadeCache.set(key, out);
-  return out;
+  return roofMatShared;
 }
-function facadeMaterial(palette, height) {
-  const band = height < 10 ? 'low' : height < 26 ? 'mid' : 'high';
-  const { map, emissiveMap } = facadeTextures(palette, band);
-  const m = new THREE.MeshStandardMaterial({ map, emissiveMap, emissive: 0xffffff, emissiveIntensity: 0, roughness: 0.88, metalness: 0.04 });
+function facadeMaterial(palette, height, variant = 0) {
+  // granularité verticale : ~3 m par étage quel que soit l'immeuble
+  const band = height < 10 ? 'low' : height < 30 ? 'mid' : height < 55 ? 'high' : 'tower';
+  const v = Math.abs(Math.round(variant)) % 2;
+  // MUTUALISATION : deux immeubles de même palette/bande/variante partagent
+  // le même matériau (donc la même texture, le même programme compilé).
+  // Avant : 62 matériaux identiques = 62 textures de 1024² en VRAM + 62
+  // compilations de shader. Après : un seul par combinaison.
+  const key = `${palette}:${band}:${v}`;
+  const hit = facadeMatCache.get(key);
+  if (hit) return hit;
+  const { day, night, bump } = facadeHD(palette, band, v);
+  const m = new THREE.MeshStandardMaterial({
+    map: day, emissiveMap: night, bumpMap: bump, bumpScale: 0.18,
+    emissive: 0xffffff, emissiveIntensity: 0,
+    roughness: 0.80, metalness: 0.05, envMapIntensity: 0.7,
+  });
   windowMaterials.push(m);
+  facadeMatCache.set(key, m);
   return m;
 }
 function noiseTexture(base, spread = 14) {
@@ -108,6 +86,85 @@ function noiseTexture(base, spread = 14) {
   const t = new THREE.CanvasTexture(c);
   t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace;
   return t;
+}
+
+
+// ---------------------------------------------------------------------------
+//        DÉTAIL DE SOL : multiplicateur à l'échelle métrique (shader)
+// ---------------------------------------------------------------------------
+/**
+ * Ajoute une texture de détail tuilée tous les 4 m, appliquée en
+ * MULTIPLICATEUR sur la couleur du sol. C'est ce qui donne du grain à 1 m du
+ * sol sans avoir besoin d'une texture de 32 000² pour couvrir 8 km.
+ *
+ * On ne dépend pas de `vUv` du modèle (chaque mesh a son propre mapping) :
+ * les coordonnées sont reconstruites depuis la position MONDE, donc le grain
+ * garde exactement la même échelle partout et ne glisse pas d'un mesh à
+ * l'autre. Aucun coût CPU : tout est fait sur le GPU.
+ */
+function addGroundDetail(material, detailTex, { tileMeters = 4, gain = 0.5 } = {}) {
+  if (!detailTex) return material;
+  const t = detailTex.clone();
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(1, 1);
+  t.needsUpdate = true;
+  material.userData.detailTex = t;
+  material.userData.detailTile = tileMeters;
+  material.userData.detailGain = gain;
+  // Sans clé de cache programmatique dédiée, three.js peut réutiliser le
+  // programme compilé d'un matériau SANS le hook (même état) : le détail
+  // disparaîtrait alors au hasard selon l'ordre de compilation.
+  // COMPOSITION DES HOOKS : setTextureRepeat() a pu poser son propre
+  // onBeforeCompile et sa clé de cache. Il faut les CHAÎNER, sinon le dernier
+  // appelé écrase le précédent et la répétition UV disparaît silencieusement.
+  const prevKey = material.customProgramCacheKey;
+  material.customProgramCacheKey = () => `${prevKey ? prevKey() : 'm'}|groundDetail`;
+  const prevHook = material.onBeforeCompile;
+  material.onBeforeCompile = (shader, renderer) => {
+    if (prevHook) prevHook(shader, renderer);
+    shader.uniforms.uDetail = { value: t };
+    shader.uniforms.uDetailTile = { value: tileMeters };
+    shader.uniforms.uDetailGain = { value: gain };
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vWorldPosD;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWorldPosD = (modelMatrix * vec4(position, 1.0)).xyz;');
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform sampler2D uDetail;\nuniform float uDetailTile;\nuniform float uDetailGain;\nvarying vec3 vWorldPosD;')
+      .replace('#include <map_fragment>', `#include <map_fragment>
+        {
+          vec2 duv = vWorldPosD.xz / uDetailTile;
+          float det = texture2D(uDetail, duv).r;
+          diffuseColor.rgb *= 1.0 + (det - 1.0) * uDetailGain;
+        }`);
+  };
+  material.needsUpdate = true;
+  return material;
+}
+
+
+/**
+ * Applique une répétition UV à un matériau SANS cloner sa texture.
+ *
+ * Cloner une 1024² coûte 5 Mo de RAM par clone : sur 138 bâtiments, cela fait
+ * 130 Mo de textures pour... une seule image. On change donc l'offset UV dans
+ * le shader (uniforme par matériau), la texture restant partagée.
+ * NB : les UV des faces sont déjà mis à l'échelle dans la géométrie ; ce
+ * facteur ne fait que régler le raccord sur les faces non ajustées.
+ */
+function setTextureRepeat(material, repeat) {
+  material.userData.uvRepeat = repeat;
+  const prev = material.customProgramCacheKey;
+  material.customProgramCacheKey = () => `${prev ? prev() : 'm'}|rep${repeat}`;
+  const prevHook = material.onBeforeCompile;
+  material.onBeforeCompile = (shader, renderer) => {
+    if (prevHook) prevHook(shader, renderer);
+    shader.uniforms.uUvRepeat = { value: repeat };
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nuniform float uUvRepeat;')
+      .replace('#include <uv_vertex>', '#include <uv_vertex>\n#ifdef USE_MAP\nvMapUv *= uUvRepeat;\n#endif');
+  };
+  material.needsUpdate = true;
+  return material;
 }
 
 // ================================ CITY ======================================
@@ -130,19 +187,29 @@ export class City {
   build() {
     const s = this.scene;
     // --- sol / routes ---
-    const asphaltTex = noiseTexture('#33373d'); asphaltTex.repeat.set(90, 90);
-    this.groundMat = new THREE.MeshStandardMaterial({ map: asphaltTex, roughness: 0.96, metalness: 0.02 });
+    const asphalt = asphaltHD();
+    asphalt.map.repeat.set(34, 34); asphalt.bump.repeat.set(34, 34);
+    // partagé avec les autoroutes et le circuit (clones + repeat différent)
+    this.asphaltTex = asphalt;
+    this.groundMat = addGroundDetail(new THREE.MeshStandardMaterial({
+      map: asphalt.map, bumpMap: asphalt.bump, bumpScale: 0.12, roughness: 0.94, metalness: 0.02,
+    }), groundDetailHD('asphalt'), { gain: 0.55 });
     const ground = new THREE.Mesh(new THREE.PlaneGeometry(700, 700), this.groundMat);
     ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; s.add(ground);
     // herbe lointaine autour de la ville
+    const grassTex = grassHD();
     const grass = new THREE.Mesh(new THREE.PlaneGeometry(4000, 4000),
-      new THREE.MeshStandardMaterial({ color: 0x3d5c33, roughness: 1 }));
+      addGroundDetail(new THREE.MeshStandardMaterial({
+        map: grassTex.map, bumpMap: grassTex.bump, bumpScale: 0.25, roughness: 1,
+      }), groundDetailHD('grass'), { gain: 0.35 }));
     grass.rotation.x = -Math.PI / 2; grass.position.y = -0.08; s.add(grass);
 
     // --- plateformes de blocs (trottoirs) instanciées ---
-    const walkTex = noiseTexture('#8d9299', 10); walkTex.repeat.set(6, 6);
+    const walk = sidewalkHD();
     const platGeo = new THREE.BoxGeometry(PLAT, 0.3, PLAT);
-    const platMat = new THREE.MeshStandardMaterial({ map: walkTex, roughness: 0.95 });
+    const platMat = addGroundDetail(setTextureRepeat(new THREE.MeshStandardMaterial({
+      map: walk.map, bumpMap: walk.bump, bumpScale: 0.10, roughness: 0.88, metalness: 0.03,
+    }), 22), groundDetailHD('walk'), { gain: 0.42 });
     const plats = new THREE.InstancedMesh(platGeo, platMat, N * N);
     plats.receiveShadow = true;
     const dummy = new THREE.Object3D();
@@ -181,35 +248,28 @@ export class City {
   // ======================= MÉTROPOLE ÉTENDUE (streaming) ====================
   /** Sol de la métropole : une seule tuile de 64 m répétée (routes + trottoirs). */
   buildMetroGround() {
-    const c = document.createElement('canvas'); c.width = c.height = 256;
-    const g = c.getContext('2d');
-    const road = Math.round((18 / P) * 256);        // 18 m de voirie
-    g.fillStyle = '#7f858c'; g.fillRect(0, 0, 256, 256);      // trottoirs/blocs
-    g.strokeStyle = 'rgba(0,0,0,0.12)'; g.lineWidth = 2;
-    for (let k = 32; k < 256; k += 32) { g.beginPath(); g.moveTo(0, k); g.lineTo(256, k); g.stroke(); g.beginPath(); g.moveTo(k, 0); g.lineTo(k, 256); g.stroke(); }
-    g.fillStyle = '#34383e';
-    g.fillRect(0, 0, 256, road / 2); g.fillRect(0, 256 - road / 2, 256, road / 2);
-    g.fillRect(0, 0, road / 2, 256); g.fillRect(256 - road / 2, 0, road / 2, 256);
-    // marquage central
-    g.fillStyle = 'rgba(240,220,140,0.55)';
-    for (let k = 8; k < 256; k += 34) { g.fillRect(128 - 1, k, 2, 14); g.fillRect(k, 128 - 1, 14, 2); }
-    const tex = new THREE.CanvasTexture(c);
-    tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.colorSpace = THREE.SRGBColorSpace;
+    // Tuile HAUTE DÉFINITION de 64 m (un bloc) : 2048², soit 32 px/m.
+    // L'ancienne version était en 256² (4 px/m) — c'était la principale
+    // cause de l'aspect "flou/moche" des sols vus de près.
+    const tex = metroGroundHD().map;
     const size = 8600, rep = size / P;
     tex.repeat.set(rep, rep);
     // aligner les routes sur la grille du cœur (routes à -224 + k·64)
     const off = ((size / 2 - 224) / P) - Math.round((size / 2 - 224) / P);
     tex.offset.set(-off, -off);
-    this.metroGroundMat = new THREE.MeshStandardMaterial({
-      map: tex, roughness: 0.92, metalness: 0.02, color: 0xdedede,
-    });
+    this.metroGroundMat = addGroundDetail(new THREE.MeshStandardMaterial({
+      map: tex, roughness: 0.92, metalness: 0.02, color: 0xffffff,
+    }), groundDetailHD('asphalt'), { gain: 0.6 });
     const ground = new THREE.Mesh(new THREE.PlaneGeometry(size, size), this.metroGroundMat);
     ground.rotation.x = -Math.PI / 2; ground.position.y = -0.03;
     ground.receiveShadow = true; ground.matrixAutoUpdate = false; ground.updateMatrix();
     this.scene.add(ground);
     // herbe au-delà de la métropole
+    const gTex = grassHD();
     const grass = new THREE.Mesh(new THREE.PlaneGeometry(16000, 16000),
-      new THREE.MeshStandardMaterial({ color: 0x3f5b35, roughness: 1 }));
+      addGroundDetail(new THREE.MeshStandardMaterial({
+        map: gTex.map, bumpMap: gTex.bump, bumpScale: 0.25, roughness: 1,
+      }), groundDetailHD('grass'), { gain: 0.35 }));
     grass.rotation.x = -Math.PI / 2; grass.position.y = -0.12;
     grass.matrixAutoUpdate = false; grass.updateMatrix(); this.scene.add(grass);
   }
@@ -217,7 +277,12 @@ export class City {
   /** Autoroute en anneau (2×2 km) + 4 avenues radiales + glissières + lampadaires. */
   buildHighways() {
     const group = new THREE.Group();
-    const asphalt = new THREE.MeshStandardMaterial({ color: 0x26292e, roughness: 0.72, metalness: 0.05 });
+    // MÊME tuile d'asphalte que la ville (repeat ajusté par matériau via
+    // clone) : une seule génération, une seule texture en mémoire.
+    const asphalt = addGroundDetail(setTextureRepeat(new THREE.MeshStandardMaterial({
+      map: this.asphaltTex.map, bumpMap: this.asphaltTex.bump,
+      bumpScale: 0.12, color: 0x9aa0a8, roughness: 0.85, metalness: 0.05,
+    }), 120), groundDetailHD('asphalt'), { gain: 0.55 });
     const railMat = new THREE.MeshStandardMaterial({ color: 0xb9c0c8, roughness: 0.45, metalness: 0.7 });
     const laneMat = new THREE.MeshStandardMaterial({ color: 0xe8e2c0, roughness: 0.8, emissive: 0x222018, emissiveIntensity: 0.15 });
     const span = RING * 2;
@@ -267,7 +332,10 @@ export class City {
   /** Circuit privé : anneau asphalté + glissières + arche de départ. */
   buildCircuit() {
     const group = new THREE.Group();
-    const asphalt = new THREE.MeshStandardMaterial({ color: 0x24262b, roughness: 0.65, metalness: 0.08 });
+    const asphalt = addGroundDetail(setTextureRepeat(new THREE.MeshStandardMaterial({
+      map: this.asphaltTex.map, bumpMap: this.asphaltTex.bump,
+      bumpScale: 0.12, color: 0x9aa0a8, roughness: 0.8, metalness: 0.08,
+    }), 90), groundDetailHD('asphalt'), { gain: 0.55 });
     const ring = new THREE.Mesh(new THREE.RingGeometry(CIRCUIT.r - CIRCUIT.w / 2, CIRCUIT.r + CIRCUIT.w / 2, 96, 1), asphalt);
     ring.rotation.x = -Math.PI / 2; ring.position.set(CIRCUIT.x, 0.04, CIRCUIT.z); ring.receiveShadow = true;
     group.add(ring);
@@ -424,7 +492,7 @@ export class City {
   buildBlock(cx, cz, district) {
     const spec = DISTRICTS[district];
     const count = randInt(spec.buildings[0], spec.buildings[1]);
-    const roofMat = new THREE.MeshStandardMaterial({ color: 0x3c4046, roughness: 1 });
+    const roofMat = getRoofMaterial();
     const slots = count === 1 ? [[0, 0, 1, 1]]
       : count === 2 ? [[-0.26, 0, 0.46, 0.9], [0.26, 0, 0.46, 0.9]]
       : [[-0.26, -0.26, 0.44, 0.44], [0.26, -0.26, 0.44, 0.44], [-0.26, 0.26, 0.44, 0.44], [0.26, 0.26, 0.44, 0.44]].slice(0, count);
@@ -433,8 +501,27 @@ export class City {
       const h = randRange(spec.minH, spec.maxH);
       const x = cx + ox * BZ, z = cz + oz * BZ;
       const palette = pick(spec.palettes);
-      const side = facadeMaterial(palette, h);
-      const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), [side, side, roofMat, roofMat, side, side]);
+      // variante déterministe : même bâtiment = même façade à chaque chargement
+      const variant = (Math.abs(Math.round(x * 3 + z * 7)) >> 3);
+      const side = facadeMaterial(palette, h, variant);
+      const geo = new THREE.BoxGeometry(w, h, d, 1, 1, 1);
+      // UV adaptés à la façade : 1 tuile ≈ 16 m de large. Sans cela, une
+      // texture unique est étirée sur tous les bâtiments et les fenêtres
+      // deviennent larges et floues sur les immeubles larges.
+      const TILE_W = 16;
+      const uv = geo.attributes.uv;
+      for (const grp of geo.groups) {
+        // 0/1 = faces X (largeur = d), 4/5 = faces Z (largeur = w)
+        const faceW = (grp.materialIndex === 0 || grp.materialIndex === 1) ? d : w;
+        const scaleU = faceW / TILE_W;
+        if (Math.abs(scaleU - 1) < 0.02) continue;
+        for (let k = grp.start; k < grp.start + grp.count; k++) {
+          const vi = geo.index.getX(k);
+          uv.setX(vi, uv.getX(vi) * scaleU);
+        }
+      }
+      uv.needsUpdate = true;
+      const mesh = new THREE.Mesh(geo, [side, side, roofMat, roofMat, side, side]);
       mesh.position.set(x, h / 2 + 0.15, z);
       mesh.castShadow = true; mesh.receiveShadow = true;
       // statique : aucune mise à jour de matrice par frame (gain CPU)
@@ -505,7 +592,7 @@ export class City {
     // boutique
     const shopH = 4.5;
     const side = facadeMaterial('shop', shopH);
-    const roofMat = new THREE.MeshStandardMaterial({ color: 0x3c4046, roughness: 1 });
+    const roofMat = getRoofMaterial();
     const shop = new THREE.Mesh(new THREE.BoxGeometry(16, shopH, 8), [side, side, roofMat, roofMat, side, side]);
     shop.position.set(cx, shopH / 2 + 0.15, cz + 12); shop.castShadow = true; shop.receiveShadow = true; s.add(shop);
     this.addCollider(cx, cz + 12, 16, 8);

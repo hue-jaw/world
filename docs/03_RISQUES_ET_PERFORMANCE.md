@@ -28,6 +28,52 @@
 - Lumières dynamiques simultanées bornées : 1 soleil/lune + 1 hémisphérique + 2 phares joueur + ≤ 2 gyrophares. **C'est le poste qui explose en premier sur le web** — tout le reste est émissif factice.
 - Simulation : coût proportionnel au voisinage (LOD ci-dessus), pas à la ville.
 
+## 1 bis. Budget textures HD (v0.3.1) — mesuré
+
+Objectif de la demande : « textures en full HD ». Contrainte absolue : la
+performance reste prioritaire, donc chaque texture doit rester dans un budget
+justifié et n'être générée **qu'une fois** au chargement.
+
+| Texture | Résolution | Densité | Mémoire canvas | Coût génération |
+|---|---|---|---|---|
+| Façade albédo + émissive nuit + relief | 1024² (512² petits bât.) | — | 5,3 Mo / 1,5 Mo | 40–350 ms × 8 palettes |
+| Asphalte + relief | 1024² | 16 px/m | 5,0 Mo | 240 ms |
+| **Sol métropole** (tuile 64 m) | **2048²** | **32 px/m** | 17,0 Mo | 680 ms |
+| Trottoir + relief | 512² | — | 1,3 Mo | 54 ms |
+| Herbe + relief | 512² | — | 1,3 Mo | 77 ms |
+| Détail asphalte / trottoir / herbe | 512² | **256 px/m** (tuile 2 m) | 1,0 Mo × 3 | 70–110 ms × 3 |
+| **Total génération** | | | **52,6 Mo** | **≈ 2,4 s** |
+| **Total réellement résident** (ville construite, textures uniques) | | | **122 Mo** | une fois |
+| Total GPU (mipmaps ×1,33) | | | **≈ 163 Mo** | une fois, au démarrage |
+
+> Le résident (122 Mo) dépasse la somme des générateurs (52,6 Mo) parce que
+> le cache contient toutes les combinaisons palette × bande × variante
+> réellement tirées, pas seulement les 8 palettes. Mesuré sur la ville
+> complète : 18 images 1024² + 13 images 512² + 1 image 2048². C'est un budget
+> **assumé et documenté**, pas une estimation à la louche — il reste sous la
+> cible de 6 Go VRAM du projet (≈ 3 %).
+
+Décisions prises pour tenir ce budget :
+
+- **Une texture de détail à l'échelle métrique plutôt qu'une tuile de sol
+  énorme.** Une tuile unique nette à 1 m *et* à 300 m demanderait 32 000²
+  (4 Go). Le multiplicateur de détail (tuile de 2 m, 256 px/m) branché dans
+  `onBeforeCompile` donne le grain d'asphalte sous les pieds pour 3 Mo.
+- **Coordonnées de détail reconstruites depuis la position MONDE**, pas depuis
+  les UV du mesh : l'échelle du grain est identique partout et ne « glisse »
+  pas d'un mesh à l'autre. Coût CPU nul (tout est GPU).
+- **Variantes de façade déterministes** (dérivées de x/z) et non tirées au
+  `rand()` : sinon la consommation du RNG décalait toute la génération de la
+  ville et cassait le déterminisme (cf. risque R10).
+- **Asphalte partagé** entre sol urbain, autoroutes et circuit (clones avec
+  `repeat` différent) au lieu de trois générations.
+- Message de chargement affiché **avant** la génération synchrone, sinon
+  l'écran reste figé et le jeu paraît planté.
+
+Limite assumée : le chargement initial gagne ~2,4 s. C'est un coût payé une
+seule fois ; aucun coût par frame n'a été ajouté (la texture de détail est
+échantillonnée par le GPU, le relief est précalculé au chargement).
+
 ## 2. Risques techniques majeurs & mitigations
 
 | # | Risque | Prob. × Impact | Mitigation (déjà en place / prévue) |

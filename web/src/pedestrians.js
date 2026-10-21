@@ -185,11 +185,11 @@ class Citizen {
     // animation procédurale de marche (seulement si proche : LOD)
     const dp = Math.abs(this.pos.x - ctx.playerPos().x) + Math.abs(this.pos.z - ctx.playerPos().z);
     if (dp < 130) {
-      this.walkPhase += dt * (2.2 + this.speed * 2.6);
+      this.walkPhase = Assets.advancePhase(this.walkPhase, this.speed, dt);
       if (this.rig) {
-        // modèle squeletté : cycle de marche calculé sur les os
-        Assets.walkRig(this.rig, this.speed, dt, this.walkPhase);
-        this.group.position.y = this.pos.y + Math.abs(Math.sin(this.walkPhase)) * 0.022 * clamp(this.speed, 0, 1.6);
+        // modèle squeletté : cycle de marche/course calculé sur les os
+        const bob = Assets.walkRig(this.rig, this.speed, dt, this.walkPhase);
+        this.group.position.y = this.pos.y + bob;
       } else {
         const sw = Math.sin(this.walkPhase) * clamp(this.speed * 0.32, 0, 0.75);
         this.legL.rotation.x = sw; this.legR.rotation.x = -sw;

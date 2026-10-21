@@ -26,3 +26,7 @@ desktop/node_modules/
 
 # Généré par tools/build_assets.mjs (modèles encodés en base64)
 web/src/assets.generated.js
+
+# Aperçus de développement : la planche de contrôle est versionnée, les
+# textures pleine résolution (plusieurs Mo) sont régénérables à la demande.
+previews/texture_*.png

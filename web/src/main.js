@@ -74,6 +74,14 @@ try {
   console.warn('[METROPOLIS] modèles 3D indisponibles, rendu de secours :', err);
 }
 
+// Le constructeur de City génère les textures HD (façades, sol, décors).
+// C'est un travail SYNCHRONE de quelques centaines de ms : on laisse d'abord
+// le navigateur peindre le message de chargement, sinon l'écran reste figé
+// sur le texte précédent et le jeu paraît bloqué.
+if (loadEl) loadEl.textContent = 'Génération des textures haute définition…';
+await new Promise((r) => (typeof requestAnimationFrame === 'function'
+  ? requestAnimationFrame(() => requestAnimationFrame(r))
+  : setTimeout(r, 0)));
 const city = new City(scene);
 const env = new Environment(scene, city, renderer);
 const audio = new AudioSys();

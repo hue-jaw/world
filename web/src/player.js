@@ -220,9 +220,11 @@ export class Player {
     this.group.rotation.y = this.heading;
     // animation de marche
     const sp = Math.hypot(this.vel.x, this.vel.z);
-    this.walkPhase += dt * (2 + sp * 2.4);
+    // cadence = distance parcourue / longueur de foulée (pas de glissement)
+    this.walkPhase = Assets.advancePhase(this.walkPhase, this.grounded ? sp : 0, dt);
     if (this.rig) {
-      Assets.walkRig(this.rig, this.grounded ? sp : 0, dt, this.walkPhase);
+      const bob = Assets.walkRig(this.rig, this.grounded ? sp : 0, dt, this.walkPhase);
+      this.group.position.y = this.pos.y + bob;
     } else {
       const sw = this.grounded ? Math.sin(this.walkPhase) * clamp(sp * 0.14, 0, 0.8) : 0.35;
       this.legL.rotation.x = sw; this.legR.rotation.x = -sw;

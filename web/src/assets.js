@@ -16,6 +16,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 import { VEHICLE_TYPES, clamp } from './core.js';
+import { upgradeImportedTextures } from './textures.js';
 import { MODELS } from './assets.generated.js';
 
 const loader = new GLTFLoader();
@@ -225,9 +226,16 @@ function prepareCitizen(gltf, name, targetHeight) {
     kneeR: detectKnee(bones.lowerlegr, bones.footr, src),
     armL: detectSwing(bones.upperarml, bones.handl, src),
     armR: detectSwing(bones.upperarmr, bones.handr, src),
+    // coudes : même principe que les genoux, mesuré sur la main
+    elbowL: detectSwing(bones.lowerarml, bones.handl, src),
+    elbowR: detectSwing(bones.lowerarmr, bones.handr, src),
+    // buste : axe de flexion avant (mesuré sur la tête)
+    spine: detectSwing(bones.abdomen || bones.torso || bones.chest, bones.head, src),
+    hips: detectSwing(bones.hips, bones.head, src),
   };
 
-  const REST_KEYS = ['upperlegl', 'upperlegr', 'lowerlegl', 'lowerlegr', 'upperarml', 'upperarmr'];
+  const REST_KEYS = ['upperlegl', 'upperlegr', 'lowerlegl', 'lowerlegr',
+    'upperarml', 'upperarmr', 'lowerarml', 'lowerarmr', 'abdomen', 'torso', 'chest', 'hips'];
   const rests = {};
   for (const key of REST_KEYS) if (bones[key]) rests[key] = bones[key].quaternion.clone();
 
@@ -244,6 +252,9 @@ function prepareCitizen(gltf, name, targetHeight) {
       legs: [entry('upperlegl', 'legL'), entry('upperlegr', 'legR')],
       knees: [entry('lowerlegl', 'kneeL'), entry('lowerlegr', 'kneeR')],
       arms: [entry('upperarml', 'armL'), entry('upperarmr', 'armR')],
+      elbows: [entry('lowerarml', 'elbowL'), entry('lowerarmr', 'elbowR')],
+      spine: entry(b.abdomen ? 'abdomen' : (b.torso ? 'torso' : 'chest'), 'spine'),
+      hipsBone: entry('hips', 'hips'),
       bones: b,
     };
   };
@@ -301,6 +312,11 @@ export const Assets = {
       catch (e) { console.warn('[assets] joueur :', e?.message ?? e); }
     }
 
+    // textures importées : anisotropie maximale + filtrage de qualité
+    for (const proto of Object.values(this.vehicleProtos)) upgradeImportedTextures(proto.src, 16);
+    for (const proto of Object.values(this.citizenProtos)) upgradeImportedTextures(proto.src, 16);
+    if (this.playerProto) upgradeImportedTextures(this.playerProto.src, 16);
+
     this.ready = true;
     return this;
   },
@@ -310,37 +326,78 @@ export const Assets = {
   makeVehicle(typeName) {
     const proto = this.vehicleProtos[typeName];
     if (!proto) return null;
-    const inner = proto.src.clone(true);
-    inner.scale.set(proto.sx, proto.sy, proto.sz);
-    inner.traverse((o) => {
-      if (o.isMesh) { o.castShadow = true; o.receiveShadow = false; }
+
+    // ------------------------------------------------------------------
+    // Le modèle est étiré de façon ANISOTROPE (largeur, hauteur, longueur)
+    // pour coller à la physique. Or une échelle non uniforme appliquée à
+    // une roue qui tourne la déforme en ovale. On sépare donc :
+    //   - CARROSSERIE : étirée, sans les roues ;
+    //   - ROUES : pivots à échelle UNIFORME (donc parfaitement rondes).
+    // ------------------------------------------------------------------
+    // 1) Mesures dans le repère NON étiré (positions + rayons des roues)
+    const probe = proto.src.clone(true);
+    probe.updateMatrixWorld(true);
+    const measured = new Map();
+    const realWheels = new Set(proto.wheelInfo.map((w) => w.name));  // exclut la roue de secours
+    probe.traverse((o) => {
+      if (!realWheels.has(o.name)) return;
+      const bbox = new THREE.Box3().setFromObject(o);
+      const size = bbox.getSize(new THREE.Vector3());
+      const rModel = Math.max(size.y, size.z) / 2;
+      const wp = new THREE.Vector3();
+      o.getWorldPosition(wp);
+      measured.set(o.name, { x: wp.x, y: wp.y, z: wp.z, rModel, uniform: Math.abs(o.scale.x - o.scale.y) < 1e-3 });
     });
 
+    // 2) Carrosserie étirée, roues détachées
+    const body = proto.src.clone(true);
     const group = new THREE.Group();
-    group.add(inner);
-
-    // Compensation des roues : le véhicule est étiré de façon anisotrope,
-    // les roues sont donc redimensionnées pour rester rondes et au sol.
-    const stretch = proto.sz / proto.sy;
-    const byName = {};
-    inner.traverse((o) => { byName[o.name] = o; });
+    group.add(body);
+    body.scale.set(proto.sx, proto.sy, proto.sz);
+    body.updateMatrixWorld(true);
+    body.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = false; } });
 
     const wheels = [];
     const frontWheels = [];
     let wheelRadius = 0.33;
-    for (const info of proto.wheelInfo) {
-      const node = byName[info.name];
-      if (!node) continue;
+
+    for (const [name, m] of measured) {
+      let node = null;
+      body.traverse((o) => { if (o.name === name && !node) node = o; });
+      if (!node || m.rModel <= 0.01) continue;
+
+      // rayon réel = rayon du modèle × étirement moyen vertical/longitudinal
+      const rWorld = m.rModel * (proto.sy + proto.sz) / 2;
+      const f = rWorld / m.rModel;               // facteur strictement uniforme
+
+      const pivot = new THREE.Group();
+      pivot.position.set(m.x * proto.sx, rWorld, m.z * proto.sz);
+
+      node.parent.remove(node);
+      node.position.set(0, 0, 0);
+      node.rotation.set(0, 0, 0);
       node.rotation.order = 'YXZ';
-      node.scale.set(node.scale.x, node.scale.y * stretch, node.scale.z);
-      node.position.y = info.y * stretch;
-      const r = info.radius * proto.sz;
-      wheelRadius = Math.max(wheelRadius, r);
+      if (m.uniform) node.scale.setScalar(node.scale.y * f);
+      else node.scale.multiplyScalar(f);         // roue déjà déformée à la source
+      pivot.add(node);
+      group.add(pivot);
+
+      wheelRadius = Math.max(wheelRadius, rWorld);
       wheels.push(node);
-      if (info.front) frontWheels.push(node);
+      if (proto.wheelInfo.find((w) => w.name === name)?.front) frontWheels.push(pivot);
     }
 
-    return { group, wheels, frontWheels, wheelRadius, height: proto.height, length: proto.length };
+    // Éléments décoratifs restés sur la carrosserie : la roue de secours du
+    // SUV serait écrasée par l'étirement anisotrope, on la retire.
+    body.traverse((o) => {
+      if (/wheel/i.test(o.name) && !realWheels.has(o.name)) o.visible = false;
+    });
+
+    return {
+      group, wheels, frontWheels,
+      wheelRadius: wheelRadius === 0.33 ? 0.33 : wheelRadius,
+      height: proto.height, length: proto.length,
+    };
   },
 
   // ----------------------------- Personnages -------------------------------
@@ -350,6 +407,18 @@ export const Assets = {
     scene.scale.setScalar(proto.scale);
     scene.traverse((o) => {
       if (o.isMesh || o.isSkinnedMesh) { o.castShadow = true; }
+      // ------------------------------------------------------------------
+      // CORRECTIF CRITIQUE : après clonage, SkeletonUtils recopie le
+      // bindMatrix mais laisse un bindMatrixInverse incohérent (il contient
+      // l'inverse de l'échelle centimétrique du modèle, ×0,01). Appliqué aux
+      // sommets, il les écrase vers l'origine : le personnage apparaît
+      // déformé/méconnaissable. La géométrie et les boneInverses étant dans
+      // le même repère, la liaison correcte est l'identité.
+      // ------------------------------------------------------------------
+      // NB : on NE touche PAS bindMatrix / bindMatrixInverse. Le clonage
+      // SkeletonUtils les recopie correctement (vérifié : l'étendue skinée
+      // reste identique à l'original). Les forcer à l'identité effondre le
+      // maillage sur l'origine.
     });
     const rig = proto.makeRig(scene);
     rig.variant = variant;
@@ -370,24 +439,112 @@ export const Assets = {
 
   // -------------------------- Animation procédurale ------------------------
   /**
-   * Cycle de marche : hanches/épaules en opposition de phase, genoux fléchis
-   * au retour de jambe. L'amplitude suit la vitesse, la phase vient de
-   * l'appelant (déjà utilisée par les primitives → même rythme).
+   * Cycle de locomotion unifié : MARCHE continue jusqu'à ~2,4 m/s, COURSE
+   * au-delà, avec interpolation douce entre les deux (important : la
+   * transition ne doit pas "claquer" quand le joueur sprinte).
+   *
+   *   marche : foulée 0,44 rad · genoux 0,55 · bras 0,34 · rebond 2 cm
+   *   course : foulée 0,80 rad · genoux 1,15 · bras 0,78 · coudes pliés 1,15 rad
+   *            · buste incliné 0,20 rad · rebond 7 cm
+   *
+   * @param rig     squelette (Assets.makeCitizen / makePlayer)
+   * @param speed   vitesse horizontale en m/s
+   * @param dt      delta temps
+   * @param phase   phase de cycle (accumulée par l'appelant)
+   * @returns {number} amplitude du rebond vertical, à appliquer par l'appelant
    */
-  walkRig(rig, speed, dt, phase) {
-    if (!rig) return;
-    const amp = clamp(speed / 1.45, 0, 1.25);
-    if (amp < 0.02 && rig._idle === true) return;
-    rig._idle = amp < 0.02;
+  animateRig(rig, speed, dt, phase) {
+    if (!rig) return 0;
+    const run = clamp((speed - 2.4) / 3.2, 0, 1);      // 0 = marche, 1 = course
+    const moving = clamp(speed / 0.9, 0, 1);           // 0 = immobile
+
+    // paramètres interpolés marche <-> course
+    const stride = (0.44 + 0.36 * run) * moving;
+    const kneeAmp = (0.55 + 0.60 * run) * moving;
+    const kneeBase = 0.10 + 0.35 * run;
+    const armAmp = (0.34 + 0.44 * run) * moving;
+    const elbowBend = (0.10 + 1.05 * run) * moving;
+    const lean = (0.03 + 0.17 * run) * moving;
+    const bobAmp = (0.018 + 0.052 * run) * moving;
+    const hipYaw = (0.05 + 0.10 * run) * moving;
+
+    const setRot = (e, angle) => {
+      if (!e) return;
+      e.bone.quaternion.copy(e.rest).multiply(_q.setFromAxisAngle(e.axis, angle * e.sign));
+    };
+    const addRot = (e, angle) => {
+      if (!e) return;
+      e.bone.quaternion.copy(e.rest)
+        .multiply(_q.setFromAxisAngle(e.axis, angle * e.sign));
+    };
+
+    // --- jambes : hanches + genoux + chevilles ---
     for (let i = 0; i < 2; i++) {
-      const s = Math.sin(phase + i * Math.PI);
+      const ph = phase + i * Math.PI;
+      const s = Math.sin(ph);
       const leg = rig.legs[i];
       const knee = rig.knees[i];
-      const arm = rig.arms[i];
-      if (leg) leg.bone.quaternion.copy(leg.rest).multiply(_q.setFromAxisAngle(leg.axis, s * 0.46 * amp * leg.sign));
-      if (knee) knee.bone.quaternion.copy(knee.rest).multiply(_q.setFromAxisAngle(knee.axis, Math.max(0, -s) * 0.9 * amp * knee.sign));
-      if (arm) arm.bone.quaternion.copy(arm.rest).multiply(_q.setFromAxisAngle(arm.axis, -s * 0.45 * amp * arm.sign));
+      // la jambe oscille d'avant en arrière
+      setRot(leg, s * stride);
+      // le genou ne se plie que pendant le retour (jambe en arrière)
+      const flex = Math.max(0, -Math.cos(ph) * 0.5 + 0.5) * kneeAmp + kneeBase * (0.35 + 0.65 * Math.max(0, -s));
+      setRot(knee, flex);
     }
+
+    // --- bras : opposition de phase, coudes pliés en course ---
+    for (let i = 0; i < 2; i++) {
+      const ph = phase + i * Math.PI;
+      const s = Math.sin(ph);
+      setRot(rig.arms[i], -s * armAmp);
+      // coude : plié en permanence en course, légèrement en marche
+      setRot(rig.elbows?.[i], elbowBend + Math.max(0, s) * 0.30 * armAmp);
+    }
+
+    // --- buste : inclinaison avant + oscillations ---
+    if (rig.spine) {
+      const sway = Math.sin(phase * 2) * 0.015 * moving;
+      setRot(rig.spine, lean);
+      rig.spine.bone.quaternion.multiply(_q.setFromAxisAngle(_v.set(0, 0, 1).normalize(), sway));
+    }
+    if (rig.hipsBone) {
+      setRot(rig.hipsBone, Math.sin(phase * 2) * 0.02 * moving);
+    }
+
+    // Rebond vertical : le centre de masse est au plus HAUT à la position de
+    // passage (jambes jointes, |sin| = 0) et au plus BAS à l'appui double
+    // (jambes écartées, |sin| = 1) — c'est la mécanique de la marche réelle.
+    // Le rebond ne descend jamais sous 0 : sinon les pieds traversent le sol.
+    const bob = (1 - Math.abs(Math.sin(phase))) * bobAmp;
+    rig.bob = bob;
+    rig.runBlend = run;
+    return bob;
+  },
+
+  /**
+   * Longueur de foulée en mètres pour une vitesse donnée.
+   * Marche ~0,65 m par pas, course ~1,5 m par pas.
+   */
+  strideLength(speed) {
+    const sp = Math.abs(speed);
+    return clamp(1.25 + 0.34 * sp, 1.25, 3.4);
+  },
+
+  /**
+   * Avance la phase du cycle en fonction de la DISTANCE parcourue.
+   * C'est ce qui supprime le glissement de pieds : la cadence n'est plus
+   * arbitraire, elle découle de la vitesse réelle.
+   * @returns {number} nouvelle phase (radians)
+   */
+  advancePhase(phase, speed, dt) {
+    const sp = Math.abs(speed);
+    if (sp < 0.05) return phase;
+    const cyclesPerSecond = sp / this.strideLength(sp);
+    return (phase + dt * cyclesPerSecond * Math.PI * 2) % (Math.PI * 2);
+  },
+
+  /** Compatibilité : ancien nom utilisé par les tests et les PNJ. */
+  walkRig(rig, speed, dt, phase) {
+    return this.animateRig(rig, speed, dt, phase);
   },
 };
 
