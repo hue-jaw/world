@@ -48,7 +48,7 @@ function makeRainTexture() {
 }
 
 export class Environment {
-  constructor(scene, city) {
+  constructor(scene, city, renderer) {
     this.scene = scene;
     this.city = city;
     this.hour = CFG.time.startHour;
@@ -67,9 +67,10 @@ export class Environment {
     this._flash = 0;
 
     // --- lumières ---
+    this.renderer = renderer || null;
     this.sun = new THREE.DirectionalLight(0xfff3e0, 2.4);
     this.sun.castShadow = true;
-    this.sun.shadow.mapSize.set(2048, 2048);
+    this.sun.shadow.mapSize.set(1536, 1536);
     const sc = this.sun.shadow.camera;
     sc.left = -100; sc.right = 100; sc.top = 100; sc.bottom = -100; sc.near = 10; sc.far = 460;
     this.sun.shadow.bias = -0.0006; this.sun.shadow.normalBias = 0.6;
@@ -78,6 +79,22 @@ export class Environment {
     scene.add(this.hemi);
     scene.fog = new THREE.FogExp2(0xbdd7ee, 0.0012);
     scene.background = new THREE.Color(0x6fb1e8);
+
+    // --- environnement réfléchissant (PMREM) ---
+    // Une équirectangulaire dégradée est régénérée quand le ciel change :
+    // les carrosseries, le verre et la chaussée mouillée reflètent réellement
+    // la couleur du ciel et l'horizon (brief §19 : rendu cinématique).
+    this._envCanvas = document.createElement('canvas');
+    this._envCanvas.width = 256; this._envCanvas.height = 128;
+    this._envTex = new THREE.CanvasTexture(this._envCanvas);
+    this._envTex.mapping = THREE.EquirectangularReflectionMapping;
+    this._envTex.colorSpace = THREE.SRGBColorSpace;
+    this._envPMREM = null;
+    this._envHour = -99; this._envWeather = '';
+    if (this.renderer) {
+      try { this._pmremGenerator = new THREE.PMREMGenerator(this.renderer); }
+      catch (e) { console.warn('[env] PMREM indisponible :', e?.message); }
+    }
 
     // --- étoiles ---
     const starGeo = new THREE.BufferGeometry();
@@ -144,6 +161,32 @@ export class Environment {
     const table = { Clear: ['Clear', 'Cloudy', 'Cloudy', 'Fog'], Cloudy: ['Clear', 'Rain', 'Cloudy'], Rain: ['Cloudy', 'Storm', 'Rain'], Storm: ['Rain', 'Cloudy'], Fog: ['Clear', 'Cloudy'] };
     this.setWeather(pick(table[this.weatherName] || ['Clear']));
   }
+  /**
+   * Régénère la carte d'environnement (réflexions) quand le ciel change
+   * sensiblement. Coût : quelques ms, au maximum toutes les ~0,5 h de jeu.
+   */
+  updateEnvironment(sky) {
+    if (!this._pmremGenerator) return;
+    const bucket = Math.floor(this.hour * 2) / 2;
+    const weatherKey = this.weatherName + ':' + Math.round(this.params.cloud * 4) + ':' + Math.round(this.rainIntensity * 3);
+    if (bucket === this._envHour && weatherKey === this._envWeather) return;
+    this._envHour = bucket; this._envWeather = weatherKey;
+    const g = this._envCanvas.getContext('2d');
+    const top = '#' + new THREE.Color(sky.sky).getHexString();
+    const hor = '#' + new THREE.Color(sky.fog).getHexString();
+    const gnd = '#' + new THREE.Color(0x2a2c30).getHexString();
+    const grad = g.createLinearGradient(0, 0, 0, 128);
+    grad.addColorStop(0, top); grad.addColorStop(0.48, hor);
+    grad.addColorStop(0.52, hor); grad.addColorStop(1, gnd);
+    g.fillStyle = grad; g.fillRect(0, 0, 256, 128);
+    this._envTex.needsUpdate = true;
+    try {
+      this._envPMREM?.dispose();
+      this._envPMREM = this._pmremGenerator.fromEquirectangular(this._envTex);
+      this.scene.environment = this._envPMREM.texture;
+    } catch (e) { /* environnement optionnel : jamais bloquant */ }
+  }
+
   advanceTime(hours) { this.hour = (this.hour + hours) % 24; }
   formatHour() {
     const h = Math.floor(this.hour), m = Math.floor((this.hour - h) * 60);
@@ -152,7 +195,13 @@ export class Environment {
 
   update(dt, ctx) {
     // ----- horloge -----
-    this.hour = (this.hour + (dt * 24 * this.timeScale) / CFG.time.dayLengthSec) % 24;
+    // Cycle réaliste : 20 min de jour (06→20 h) puis 20 min de nuit (20→06 h),
+    // soit 40 minutes réelles pour 24 h de jeu (accélérable via timeScale).
+    const daylight = this.hour >= CFG.time.dayStart && this.hour < CFG.time.dayEnd;
+    const hoursPerSec = daylight
+      ? (CFG.time.dayEnd - CFG.time.dayStart) / CFG.time.daySeconds
+      : (24 - (CFG.time.dayEnd - CFG.time.dayStart)) / CFG.time.nightSeconds;
+    this.hour = (this.hour + dt * hoursPerSec * this.timeScale) % 24;
 
     // ----- météo : transitions douces + auto -----
     const k = 1 - Math.exp(-dt * 0.25);
@@ -173,6 +222,19 @@ export class Environment {
     const grey = this.params.cloud * 0.45;
     const skyCol = sky.sky.clone().lerp(new THREE.Color(0x6d7885), grey);
     this.scene.background.copy(skyCol);
+    // --- reflets et chaussée mouillée ---
+    this.updateEnvironment(sky);
+    const wet = clamp(this.rainIntensity * 0.95 + (this.params.cloud > 0.8 ? 0.15 : 0), 0, 1);
+    if (ctx?.city) {
+      for (const mat of [ctx.city.metroGroundMat, ctx.city.groundMat]) {
+        if (!mat) continue;
+        mat.roughness = 0.92 - wet * 0.70;      // sol lisse = miroir partiel
+        mat.metalness = 0.02 + wet * 0.42;
+        mat.color.setScalar(1 - wet * 0.28);
+        mat.envMapIntensity = 0.4 + wet * 1.3;
+        mat.needsUpdate = false;
+      }
+    }
     this.scene.fog.color.copy(sky.fog.clone().lerp(new THREE.Color(0x757e89), grey));
     this.scene.fog.density = this.params.fogDensity;
 

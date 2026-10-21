@@ -29,12 +29,13 @@ const VEHICLE_MODEL = {
   Taxi: 'car_taxi.glb',
   Utilitaire: 'car_van.glb',
   Police: 'car_police.glb',
+  Moto: 'car_moto.glb',
 };
 
 // Hauteur réelle visée (m) : les modèles Kenney sont trapus, on les étire
 // en longueur et on les abaisse pour coller aux proportions de la physique.
 const TARGET_HEIGHT = {
-  Citadine: 1.44, Berline: 1.46, SUV: 1.74, Sportive: 1.26, Taxi: 1.5, Utilitaire: 2.24, Police: 1.48,
+  Citadine: 1.44, Berline: 1.46, SUV: 1.74, Sportive: 1.26, Taxi: 1.5, Utilitaire: 2.24, Police: 1.48, Moto: 1.25,
 };
 
 const CITIZEN_MODELS = ['char_Casual.glb', 'char_Casual2.glb', 'char_Suit.glb', 'char_Worker.glb', 'char_Punk.glb'];

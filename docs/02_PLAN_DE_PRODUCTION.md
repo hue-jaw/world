@@ -95,3 +95,25 @@ Objectif : la même boucle de jeu dans Unreal, assets placeholder (cubes/capsule
 
 Reste à faire (prochaine itération) : bâtiments modélisés (Kenney City Kit), mobilier urbain
 (lampadaires, feux, panneaux), véhicules d'urgence (ambulance, camion de pompiers).
+
+### Phase 1 quater — Métropole et confort (livrée en v0.3)
+
+| Livrable | État | Critère de sortie |
+|---|---|---|
+| Métropole 8,19 km streamée | ✅ | 129×129 nœuds, chunks de 256 m, collision valide à 3 km |
+| Autoroute en anneau + radiales + circuit privé | ✅ | drivables, glissières, lampadaires nuit |
+| Caméra automatique | ✅ | suit la direction à pied et en voiture, `C` pour libérer |
+| GPS flèches au sol + mini-carte | ✅ | A* borné, tracé continu, objectif ramené sur le bord |
+| Manettes Xbox / PS4 / PS5 / Switch Pro | ✅ | hot-plug, zone morte radiale, front montant, vibration |
+| Économie (logements, garage, véhicules, upgrades) | ✅ | 8 logements, garage 2→6 places, 3 axes d'amélioration |
+| Santé, chutes, accidents, hôpital | ✅ | dégâts de chute et de collision, réapparition chez soi |
+| Toits des immeubles possédés | ✅ | `groundY` multi-niveaux, collision ignorée au-dessus du toit |
+| Moto | ✅ | modèle CC0, 2 roues, braquage |
+| Cycle 20 min jour / 20 min nuit | ✅ | 40 min par cycle complet, accélérable ×4 / ×16 |
+| Reflets / chaussée mouillée | ✅ | PMREM régénéré selon ciel + pluie, rugosité dynamique |
+| Optimisation mesurée | ✅ | résolution adaptative, matrices statiques, ombres 1536, chunks visibles seuls |
+
+**Reporté explicitement en Phase 1 quinquies (v0.4)** — non implémenté, ne pas annoncer comme fait :
+métiers taxi / police inversée / pompier / criminel, hélicoptères, trottinettes électriques,
+escalade à mains nues des façades (seul l'accès par toit des logements existe).
+

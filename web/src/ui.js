@@ -3,7 +3,7 @@
 // HUD minimaliste : horloge/météo, boussole, statut, objectif, minimap
 // temps réel, compteur, prompts, notifications, debug. (UE5 : UMG + CommonUI)
 // ============================================================================
-import { Bus, clamp, WEATHER_STATES } from './core.js';
+import { Bus, clamp, WEATHER_STATES, ECONOMY } from './core.js';
 import { WORLD_HALF } from './city.js';
 
 const $ = (id) => document.getElementById(id);
@@ -19,10 +19,15 @@ export class UI {
       prompt: $('prompt'), promptText: $('prompt-text'),
       toasts: $('toasts'), debug: $('debug-panel'),
       compass: $('compass-inner'), busted: $('busted'), bustedSub: $('busted-sub'),
+      health: $('health-bar'), gamepad: $('hud-gamepad'),
+      shop: $('shop'), shopBody: $('shop-body'), shopBalance: $('shop-balance'),
+      downed: $('downed'), downedSub: $('downed-sub'), gpsHint: $('gps-hint'),
     };
     this.mini = $('minimap').getContext('2d');
     this._lastClock = ''; this._miniT = 0; this._promptText = undefined;
     this.debugVisible = false;
+    this.shopOpen = false; this.shopTab = 'houses';
+    this._bindShop();
 
     // boussole : repères cardinaux + marqueur objectif
     this.compassItems = [];
@@ -76,6 +81,7 @@ export class UI {
   }
 
   update(dt, ctx) {
+    this._lastCtx = ctx;
     const env = ctx.env;
     // horloge (ne touche le DOM que si la minute change)
     const t = env.formatHour();
@@ -109,6 +115,21 @@ export class UI {
       this.els.gear.textContent = pv.vf < -0.4 ? 'R' : 'D';
     } else this.els.speedo.classList.add('hidden');
 
+    // ---- santé ----
+    const hp = ctx.player?.health ?? 100, maxHp = ctx.player?.maxHealth ?? 100;
+    if (this.els.health) {
+      const pct = clamp((hp / maxHp) * 100, 0, 100);
+      this.els.health.style.width = pct + '%';
+      this.els.health.className = pct < 25 ? 'critical' : pct < 55 ? 'hurt' : '';
+    }
+    // ---- manette ----
+    if (this.els.gamepad) {
+      const gp = ctx.player?.gamepad;
+      this.els.gamepad.textContent = gp?.connected ? '🎮 ' + gp.label() : '🎮 manette : appuyez sur un bouton';
+      this.els.gamepad.classList.toggle('on', !!gp?.connected);
+    }
+    if (this.shopOpen) this._refreshShop(ctx);
+
     this._updateCompass(ctx, obj);
     this._miniT -= dt;
     if (this._miniT <= 0) { this._miniT = 0.1; this._drawMinimap(ctx, obj); }
@@ -139,50 +160,206 @@ export class UI {
     } else this.objMark.style.display = 'none';
   }
 
+  /**
+   * Mini-carte CENTRÉE SUR LE JOUEUR (indispensable sur 8 km), avec le tracé
+   * GPS, les flèches de direction et les objectifs ramenés sur le bord.
+   */
   _drawMinimap(ctx, obj) {
     const g = this.mini, S = 190, C = S / 2;
-    const world = WORLD_HALF + 36;
-    const sc = S / (world * 2);
-    const X = (x) => C + x * sc, Z = (z) => C + z * sc;
-    g.fillStyle = '#232a33'; g.fillRect(0, 0, S, S);                 // routes
-    // blocs
-    const N = 7, P = 64, PL = 46;
-    for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) {
-      const cx = (i - (N - 1) / 2) * P, cz = (j - (N - 1) / 2) * P;
-      const isPark = (i === 2 && j === 4) || (i === 5 && j === 5);
-      g.fillStyle = isPark ? '#2e5631' : '#39434f';
-      g.fillRect(X(cx - PL / 2), Z(cz - PL / 2), PL * sc, PL * sc);
-    }
-    // véhicules du trafic proches
     const pp = ctx.playerPos();
-    g.fillStyle = 'rgba(210,220,235,0.75)';
+    const radius = 150;                       // 300 m visibles
+    const sc = S / (radius * 2);
+    const X = (x) => C + (x - pp.x) * sc, Z = (z) => C + (z - pp.z) * sc;
+
+    g.fillStyle = '#1a2028'; g.fillRect(0, 0, S, S);
+    // --- quadrillage routier de la métropole (tous les 64 m) ---
+    const P = 64, first = Math.floor((pp.x - radius) / P) * P;
+    g.strokeStyle = '#2f3946'; g.lineWidth = 3;
+    for (let x = first; x <= pp.x + radius; x += P) {
+      g.beginPath(); g.moveTo(X(x), 0); g.lineTo(X(x), S); g.stroke();
+    }
+    const firstZ = Math.floor((pp.z - radius) / P) * P;
+    for (let z = firstZ; z <= pp.z + radius; z += P) {
+      g.beginPath(); g.moveTo(0, Z(z)); g.lineTo(S, Z(z)); g.stroke();
+    }
+    // --- bâtiments du cœur détaillé ---
+    for (const b of ctx.city.buildings) {
+      if (Math.abs(b.x - pp.x) > radius + 40 || Math.abs(b.z - pp.z) > radius + 40) continue;
+      g.fillStyle = b.kind === 'shop' ? '#4a5a6e' : (b.h > 25 ? '#4d5c70' : '#3d4a5a');
+      g.fillRect(X(b.x - b.w / 2), Z(b.z - b.d / 2), Math.max(1.5, b.w * sc), Math.max(1.5, b.d * sc));
+    }
+    // --- tracé GPS (sous les marqueurs) ---
+    const route = ctx.gps?.routePoints?.() || [];
+    if (route.length > 1) {
+      g.strokeStyle = 'rgba(53,214,255,0.85)'; g.lineWidth = 3.4; g.lineJoin = 'round';
+      g.beginPath();
+      let started = false;
+      for (const n of route) {
+        if (Math.abs(n.x - pp.x) > radius * 2.2 || Math.abs(n.z - pp.z) > radius * 2.2) { started = false; continue; }
+        const sx = X(n.x), sz = Z(n.z);
+        if (!started) { g.moveTo(sx, sz); started = true; } else g.lineTo(sx, sz);
+      }
+      g.stroke();
+      // flèches directionnelles sur le tracé (toutes les 3 nodes)
+      g.fillStyle = '#9fe6ff';
+      for (let k = 2; k < route.length - 1; k += 3) {
+        const a = route[k], b = route[k + 1];
+        const mx = X(a.x), mz = Z(a.z);
+        if (mx < 6 || mz < 6 || mx > S - 6 || mz > S - 6) continue;
+        const ang = Math.atan2(b.x - a.x, b.z - a.z);
+        g.save(); g.translate(mx, mz); g.rotate(-ang + Math.PI);
+        g.beginPath(); g.moveTo(0, -5); g.lineTo(3.4, 3.4); g.lineTo(-3.4, 3.4); g.closePath(); g.fill();
+        g.restore();
+      }
+    }
+    // --- trafic proche ---
+    g.fillStyle = 'rgba(210,220,235,0.72)';
     for (const v of ctx.traffic.vehicles) {
       if (!v.active || v === ctx.playerVehicle || v.spec.police) continue;
-      if (Math.abs(v.pos.x - pp.x) > 150 || Math.abs(v.pos.z - pp.z) > 150) continue;
+      if (Math.abs(v.pos.x - pp.x) > radius || Math.abs(v.pos.z - pp.z) > radius) continue;
       g.fillRect(X(v.pos.x) - 1, Z(v.pos.z) - 1, 2.4, 2.4);
     }
-    // police (clignotant)
+    // --- police ---
     const blink = Math.floor(performance.now() / 250) % 2 === 0;
     for (const v of ctx.traffic.police) {
+      if (Math.abs(v.pos.x - pp.x) > radius || Math.abs(v.pos.z - pp.z) > radius) continue;
       g.fillStyle = blink ? '#3d7bff' : '#ff4040';
       g.beginPath(); g.arc(X(v.pos.x), Z(v.pos.z), 3.2, 0, 6.29); g.fill();
     }
-    // objectif
+    // --- objectif : sur la carte ou ramené sur le bord avec flèche ---
     if (obj) {
       const pulse = 3.5 + Math.sin(performance.now() / 220) * 1.4;
+      let ox = X(obj.pos.x), oz = Z(obj.pos.z);
+      const margin = 10, inside = ox > margin && oz > margin && ox < S - margin && oz < S - margin;
+      if (!inside) {
+        const ang = Math.atan2(obj.pos.z - pp.z, obj.pos.x - pp.x);
+        ox = clamp(C + Math.cos(ang) * (C - margin), margin, S - margin);
+        oz = clamp(C + Math.sin(ang) * (C - margin), margin, S - margin);
+      }
       g.fillStyle = obj.phase === 'deliver' ? '#5ee1ff' : '#ffd75e';
-      g.beginPath(); g.arc(X(obj.pos.x), Z(obj.pos.z), pulse, 0, 6.29); g.fill();
+      g.beginPath(); g.arc(ox, oz, pulse, 0, 6.29); g.fill();
       g.strokeStyle = g.fillStyle; g.globalAlpha = 0.5;
-      g.beginPath(); g.arc(X(obj.pos.x), Z(obj.pos.z), pulse + 4, 0, 6.29); g.stroke();
+      g.beginPath(); g.arc(ox, oz, pulse + 4, 0, 6.29); g.stroke();
       g.globalAlpha = 1;
     }
-    // joueur (triangle orienté)
+    // --- joueur (triangle orienté, au centre) ---
     const h = ctx.player.getHeading();
     g.save();
-    g.translate(X(pp.x), Z(pp.z));
+    g.translate(C, C);
     g.rotate(Math.atan2(Math.sin(h), -Math.cos(h)));
     g.fillStyle = '#ffffff';
     g.beginPath(); g.moveTo(0, -6); g.lineTo(4.2, 4.5); g.lineTo(-4.2, 4.5); g.closePath(); g.fill();
     g.restore();
+    // --- flèche Nord ---
+    g.fillStyle = '#8fb6e0'; g.font = 'bold 10px sans-serif'; g.textAlign = 'center';
+    g.fillText('N', C, 11);
+  }
+
+  // ============================ HUB COMMERCIAL =============================
+  _bindShop() {
+    const close = () => this.closeShop();
+    this.els.shop?.querySelector('#shop-close')?.addEventListener('click', close);
+    document.querySelectorAll('#shop .shop-tabs button').forEach((b) => {
+      b.addEventListener('click', () => {
+        this.shopTab = b.dataset.tab;
+        document.querySelectorAll('#shop .shop-tabs button').forEach((x) => x.classList.toggle('active', x === b));
+        this._renderedTab = null; this._refreshShop(this._lastCtx);
+      });
+    });
+    document.getElementById('tb-shop')?.addEventListener('click', () => this.toggleShop(this._lastCtx));
+    this.els.shop?.addEventListener('click', (e) => { if (e.target === this.els.shop) close(); });
+  }
+
+  toggleShop(ctx) { this.shopOpen ? this.closeShop() : this.openShop(ctx); }
+  openShop(ctx) {
+    if (!ctx?.economy) return;
+    this.shopOpen = true; this.els.shop.classList.remove('hidden');
+    this._renderedTab = null; this._refreshShop(ctx);
+    this.cb.onShopOpen?.(true);
+  }
+  closeShop() {
+    this.shopOpen = false; this.els.shop?.classList.add('hidden');
+    this.cb.onShopOpen?.(false);
+  }
+
+  _refreshShop(ctx) {
+    if (!ctx?.economy || !this.els.shopBody) return;
+    this._lastCtx = ctx;
+    const eco = ctx.economy;
+    if (this.els.shopBalance) this.els.shopBalance.textContent = '$ ' + Math.round(eco.money).toLocaleString('fr-FR');
+    if (this._renderedTab === this.shopTab && this._lastMoney === Math.round(eco.money)) return;
+    this._renderedTab = this.shopTab; this._lastMoney = Math.round(eco.money);
+    const body = this.els.shopBody;
+    body.innerHTML = '';
+    const row = (title, sub, price, owned, action) => {
+      const el = document.createElement('div');
+      el.className = 'shop-item' + (owned ? ' owned' : '');
+      const main = document.createElement('div'); main.className = 'si-main';
+      const t = document.createElement('div'); t.className = 'si-title'; t.textContent = title;
+      const s2 = document.createElement('div'); s2.className = 'si-sub'; s2.textContent = sub;
+      main.append(t, s2); el.append(main);
+      if (owned) {
+        const o = document.createElement('div'); o.className = 'si-owned'; o.textContent = '✓ possédé'; el.append(o);
+      } else {
+        const p = document.createElement('div'); p.className = 'si-price'; p.textContent = '$ ' + price.toLocaleString('fr-FR'); el.append(p);
+        const b = document.createElement('button'); b.textContent = 'Acheter';
+        b.disabled = eco.money < price;
+        b.addEventListener('click', action);
+        el.append(b);
+      }
+      body.append(el);
+    };
+
+    if (this.shopTab === 'houses') {
+      for (const h of eco.houses) {
+        const owned = eco.ownedHouses.includes(h.id);
+        row(`${h.label} — ${h.floor}e étage`, `${h.building.h.toFixed(0)} m de haut · accès toit ${owned ? 'débloqué' : 'inclus'}`, h.price, owned,
+          () => { const r = eco.buyHouse(h.id); if (!r.ok) this._shopError(r.reason, ctx); });
+      }
+    } else if (this.shopTab === 'cars') {
+      for (const c of ECONOMY.cars) {
+        const ownedCount = eco.ownedCars.filter((x) => x.type === c.type).length;
+        row(`${c.label}`, `${ownedCount ? ownedCount + ' au garage · ' : ''}livré au garage`, c.price, false,
+          () => { const r = eco.buyCar(c.type); if (!r.ok) this._shopError(r.reason, ctx); });
+      }
+    } else if (this.shopTab === 'garage') {
+      const lvl = eco.garageLevelData;
+      row(`Niveau actuel : ${lvl.label}`, `${lvl.slots} emplacements utilisés par ${eco.ownedCars.length} véhicule(s)`, 0, true, () => {});
+      const next = ECONOMY.garage.levels[eco.garageLevel + 1];
+      if (next) row(`Agrandir : ${next.label}`, `${next.slots} emplacements`, next.cost, false,
+        () => { const r = eco.upgradeGarage(); if (!r.ok) this._shopError(r.reason, ctx); });
+      else row('Garage au niveau maximal', 'Atelier 6 places', 0, true, () => {});
+    } else if (this.shopTab === 'upgrades') {
+      if (!eco.ownedCars.length) {
+        const p = document.createElement('div'); p.className = 'shop-empty';
+        p.textContent = "Aucun véhicule au garage. Achetez-en un dans l'onglet Véhicules.";
+        body.append(p);
+      }
+      for (const car of eco.ownedCars) {
+        for (const [k, def] of Object.entries(ECONOMY.upgrades)) {
+          const lvl = car.upgrades[k] || 0;
+          const maxed = lvl >= def.costs.length;
+          const price = maxed ? 0 : def.costs[lvl];
+          row(`${car.type} — ${def.label}`, maxed ? `Niveau ${lvl} (max)` : `Niveau ${lvl} → ${lvl + 1}`, price, maxed,
+            () => { const r = eco.upgradeCar(car.id, k); if (!r.ok) this._shopError(r.reason, ctx); });
+        }
+      }
+    }
+  }
+
+  _shopError(reason, ctx) {
+    Bus.emit('toast', { text: '⛔ ' + reason, kind: 'bad' });
+    this._lastMoney = -1; this._refreshShop(ctx);
+  }
+
+  toggleDebug() {
+    this.debugVisible = !this.debugVisible;
+    this.els.debug.classList.toggle('hidden', !this.debugVisible);
+  }
+
+  showDowned(on, text) {
+    if (!this.els.downed) return;
+    this.els.downed.classList.toggle('hidden', !on);
+    if (text && this.els.downedSub) this.els.downedSub.textContent = text;
   }
 }

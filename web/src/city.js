@@ -15,6 +15,22 @@ export const rightOf = (d) => ({ x: -d.z, z: d.x });     // perpendiculaire (voi
 
 const blockCenter = (i) => (i - (N - 1) / 2) * P;
 
+// ---- Métropole étendue (8,19 km) ----
+// La grille du cœur (routes tous les 64 m, à partir de -224) est prolongée
+// mathématiquement sur 128 blocs par axe. Seuls les blocs proches du joueur
+// sont matérialisés (streaming), le reste vit sous forme de données.
+const MN = CFG.city.metroBlocks;              // 128 blocs par axe
+const CHUNK = CFG.city.chunkBlocks;           // 4 blocs par chunk
+const CORE_I = 60;                            // indice métro de la 1re route du cœur
+const METRO_MIN = -WORLD_HALF - CORE_I * P;   // -4064 m
+const METRO_MAX = -WORLD_HALF + (MN - CORE_I) * P; // 4128 m
+const blockX = (k) => -WORLD_HALF + k * P;    // route k (cœur : 0..7)
+const metroX = (i) => -WORLD_HALF + (i - CORE_I) * P;
+const nodeIndex = (x) => clamp(Math.round((x + WORLD_HALF) / P) + CORE_I, 0, MN);
+// Autoroute en anneau + avenues radiales + circuit privé
+const RING = 2048, RING_W = 30, RADIAL_W = 26;
+const CIRCUIT = { x: 2400, z: 2400, r: 168, w: 22 };
+
 // ------------------------- Textures procédurales ----------------------------
 // Façades dessinées sur canvas : map jour + emissiveMap nuit alignées.
 // Zéro asset externe, faible coût mémoire, fenêtres allumées la nuit.
@@ -115,8 +131,8 @@ export class City {
     const s = this.scene;
     // --- sol / routes ---
     const asphaltTex = noiseTexture('#33373d'); asphaltTex.repeat.set(90, 90);
-    const ground = new THREE.Mesh(new THREE.PlaneGeometry(700, 700),
-      new THREE.MeshStandardMaterial({ map: asphaltTex, roughness: 0.96 }));
+    this.groundMat = new THREE.MeshStandardMaterial({ map: asphaltTex, roughness: 0.96, metalness: 0.02 });
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(700, 700), this.groundMat);
     ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; s.add(ground);
     // herbe lointaine autour de la ville
     const grass = new THREE.Mesh(new THREE.PlaneGeometry(4000, 4000),
@@ -153,10 +169,201 @@ export class City {
     this.buildRoadGraph();
     this.buildPedGraph();
     this.indexColliders();
+    this.buildMetroGround();
+    this.buildHighways();
+    this.buildCircuit();
+    this.chunks = new Map();
+    this.focus = { x: 0, z: 0 };
+    this._streamT = 0;
+    this.updateStreaming(0, 0);
   }
 
-  addCollider(x, z, w, d) {
-    this.colliders.push({ minX: x - w / 2, maxX: x + w / 2, minZ: z - d / 2, maxZ: z + d / 2 });
+  // ======================= MÉTROPOLE ÉTENDUE (streaming) ====================
+  /** Sol de la métropole : une seule tuile de 64 m répétée (routes + trottoirs). */
+  buildMetroGround() {
+    const c = document.createElement('canvas'); c.width = c.height = 256;
+    const g = c.getContext('2d');
+    const road = Math.round((18 / P) * 256);        // 18 m de voirie
+    g.fillStyle = '#7f858c'; g.fillRect(0, 0, 256, 256);      // trottoirs/blocs
+    g.strokeStyle = 'rgba(0,0,0,0.12)'; g.lineWidth = 2;
+    for (let k = 32; k < 256; k += 32) { g.beginPath(); g.moveTo(0, k); g.lineTo(256, k); g.stroke(); g.beginPath(); g.moveTo(k, 0); g.lineTo(k, 256); g.stroke(); }
+    g.fillStyle = '#34383e';
+    g.fillRect(0, 0, 256, road / 2); g.fillRect(0, 256 - road / 2, 256, road / 2);
+    g.fillRect(0, 0, road / 2, 256); g.fillRect(256 - road / 2, 0, road / 2, 256);
+    // marquage central
+    g.fillStyle = 'rgba(240,220,140,0.55)';
+    for (let k = 8; k < 256; k += 34) { g.fillRect(128 - 1, k, 2, 14); g.fillRect(k, 128 - 1, 14, 2); }
+    const tex = new THREE.CanvasTexture(c);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.colorSpace = THREE.SRGBColorSpace;
+    const size = 8600, rep = size / P;
+    tex.repeat.set(rep, rep);
+    // aligner les routes sur la grille du cœur (routes à -224 + k·64)
+    const off = ((size / 2 - 224) / P) - Math.round((size / 2 - 224) / P);
+    tex.offset.set(-off, -off);
+    this.metroGroundMat = new THREE.MeshStandardMaterial({
+      map: tex, roughness: 0.92, metalness: 0.02, color: 0xdedede,
+    });
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(size, size), this.metroGroundMat);
+    ground.rotation.x = -Math.PI / 2; ground.position.y = -0.03;
+    ground.receiveShadow = true; ground.matrixAutoUpdate = false; ground.updateMatrix();
+    this.scene.add(ground);
+    // herbe au-delà de la métropole
+    const grass = new THREE.Mesh(new THREE.PlaneGeometry(16000, 16000),
+      new THREE.MeshStandardMaterial({ color: 0x3f5b35, roughness: 1 }));
+    grass.rotation.x = -Math.PI / 2; grass.position.y = -0.12;
+    grass.matrixAutoUpdate = false; grass.updateMatrix(); this.scene.add(grass);
+  }
+
+  /** Autoroute en anneau (2×2 km) + 4 avenues radiales + glissières + lampadaires. */
+  buildHighways() {
+    const group = new THREE.Group();
+    const asphalt = new THREE.MeshStandardMaterial({ color: 0x26292e, roughness: 0.72, metalness: 0.05 });
+    const railMat = new THREE.MeshStandardMaterial({ color: 0xb9c0c8, roughness: 0.45, metalness: 0.7 });
+    const laneMat = new THREE.MeshStandardMaterial({ color: 0xe8e2c0, roughness: 0.8, emissive: 0x222018, emissiveIntensity: 0.15 });
+    const span = RING * 2;
+    for (const [sx, sz, len, rot] of [[0, -RING, span, 0], [0, RING, span, 0], [-RING, 0, span, Math.PI / 2], [RING, 0, span, Math.PI / 2]]) {
+      const road = new THREE.Mesh(new THREE.BoxGeometry(len, 0.12, RING_W), asphalt);
+      road.position.set(sx, 0.03, sz); road.rotation.y = rot; group.add(road);
+      for (const side of [-1, 1]) {
+        const rail = new THREE.Mesh(new THREE.BoxGeometry(len, 0.85, 0.22), railMat);
+        rail.position.set(sx + Math.cos(rot) * side * (RING_W / 2 + 0.3), 0.5, sz - Math.sin(rot) * side * (RING_W / 2 + 0.3));
+        rail.rotation.y = rot; group.add(rail);
+      }
+      const dash = new THREE.Mesh(new THREE.BoxGeometry(len, 0.02, 0.32), laneMat);
+      dash.position.set(sx, 0.10, sz); dash.rotation.y = rot; group.add(dash);
+    }
+    // avenues radiales (du cœur vers l'anneau)
+    for (const [ax, az, rot] of [[0, 1, 0], [0, -1, 0], [1, 0, Math.PI / 2], [-1, 0, Math.PI / 2]]) {
+      const len = RING - WORLD_HALF;
+      const road = new THREE.Mesh(new THREE.BoxGeometry(len, 0.12, RADIAL_W), asphalt);
+      road.position.set(ax * (WORLD_HALF + len / 2), 0.032, az * (WORLD_HALF + len / 2));
+      road.rotation.y = rot; group.add(road);
+    }
+    // lampadaires d'autoroute (instanciés, éteints le jour)
+    const lampCount = Math.floor((span * 4) / 46);
+    const poleGeo = new THREE.CylinderGeometry(0.1, 0.14, 9, 6);
+    const poles = new THREE.InstancedMesh(poleGeo, new THREE.MeshStandardMaterial({ color: 0x3a4048, metalness: 0.6, roughness: 0.5 }), lampCount);
+    const heads = new THREE.InstancedMesh(new THREE.SphereGeometry(0.35, 8, 6), new THREE.MeshStandardMaterial({ color: 0x556, emissive: 0xffc27a, emissiveIntensity: 0 }), lampCount);
+    const d = new THREE.Object3D();
+    let n = 0;
+    for (let k = 0; k < 4 && n < lampCount; k++) {
+      const side = k < 2 ? 1 : -1, axis = k % 2;
+      for (let a = -RING; a <= RING && n < lampCount; a += 46) {
+        const x = axis === 0 ? a : side * (RING + 2);
+        const z = axis === 0 ? side * (RING + 2) : a;
+        d.position.set(x, 4.5, z); d.updateMatrix(); poles.setMatrixAt(n, d.matrix);
+        d.position.y = 9.1; d.updateMatrix(); heads.setMatrixAt(n, d.matrix);
+        n++;
+      }
+    }
+    poles.count = heads.count = n;
+    this.highwayLampMat = heads.material;
+    this.highwayLamps = heads;
+    group.add(poles, heads);
+    group.traverse((o) => { o.matrixAutoUpdate = false; if (o.isMesh || o.isInstancedMesh) { o.updateMatrix(); } });
+    this.scene.add(group);
+  }
+
+  /** Circuit privé : anneau asphalté + glissières + arche de départ. */
+  buildCircuit() {
+    const group = new THREE.Group();
+    const asphalt = new THREE.MeshStandardMaterial({ color: 0x24262b, roughness: 0.65, metalness: 0.08 });
+    const ring = new THREE.Mesh(new THREE.RingGeometry(CIRCUIT.r - CIRCUIT.w / 2, CIRCUIT.r + CIRCUIT.w / 2, 96, 1), asphalt);
+    ring.rotation.x = -Math.PI / 2; ring.position.set(CIRCUIT.x, 0.04, CIRCUIT.z); ring.receiveShadow = true;
+    group.add(ring);
+    const curb = new THREE.Mesh(new THREE.RingGeometry(CIRCUIT.r + CIRCUIT.w / 2, CIRCUIT.r + CIRCUIT.w / 2 + 1.2, 96, 1),
+      new THREE.MeshStandardMaterial({ color: 0xd8d8d8, roughness: 0.8 }));
+    curb.rotation.x = -Math.PI / 2; curb.position.set(CIRCUIT.x, 0.06, CIRCUIT.z); group.add(curb);
+    const barrier = new THREE.Mesh(new THREE.TorusGeometry(CIRCUIT.r + CIRCUIT.w / 2 + 2.2, 0.5, 6, 96),
+      new THREE.MeshStandardMaterial({ color: 0xc23b32, roughness: 0.6 }));
+    barrier.rotation.x = Math.PI / 2; barrier.position.set(CIRCUIT.x, 0.55, CIRCUIT.z); group.add(barrier);
+    const arch = new THREE.Mesh(new THREE.BoxGeometry(28, 1.2, 1), new THREE.MeshStandardMaterial({ color: 0xf0c419, emissive: 0x3a2c00, emissiveIntensity: 0.3 }));
+    arch.position.set(CIRCUIT.x, 6.5, CIRCUIT.z + CIRCUIT.r); group.add(arch);
+    for (const s of [-1, 1]) {
+      const leg = new THREE.Mesh(new THREE.BoxGeometry(0.9, 6.5, 0.9), new THREE.MeshStandardMaterial({ color: 0x333 }));
+      leg.position.set(CIRCUIT.x + s * 13, 3.2, CIRCUIT.z + CIRCUIT.r); group.add(leg);
+    }
+    group.traverse((o) => { o.matrixAutoUpdate = false; o.updateMatrix(); });
+    this.scene.add(group);
+  }
+
+  /** Génère (une fois) le contenu d'un chunk de métropole, sans le cœur détaillé. */
+  genChunk(ci, cj) {
+    const items = [];
+    const palettes = [0x8d99a6, 0xa8917c, 0x7d8a94, 0x9aa3ad, 0x85796d, 0xb0b6bd];
+    for (let bi = ci * CHUNK; bi < (ci + 1) * CHUNK; bi++) {
+      for (let bj = cj * CHUNK; bj < (cj + 1) * CHUNK; bj++) {
+        if (bi < 0 || bj < 0 || bi >= MN || bj >= MN) continue;
+        if (bi >= CORE_I && bi <= CORE_I + N - 1 && bj >= CORE_I && bj <= CORE_I + N - 1) continue; // cœur
+        const cx = metroX(bi + 0.5), cz = metroX(bj + 0.5);
+        // couloirs réservés (radiales, anneau, circuit)
+        if (Math.abs(cx) < RADIAL_W / 2 + 10 || Math.abs(cz) < RADIAL_W / 2 + 10) continue;
+        if (Math.abs(Math.abs(cx) - RING) < RING_W / 2 + 12 || Math.abs(Math.abs(cz) - RING) < RING_W / 2 + 12) continue;
+        if (Math.hypot(cx - CIRCUIT.x, cz - CIRCUIT.z) < CIRCUIT.r + 40) continue;
+        const dist = Math.hypot(cx, cz);
+        const maxH = dist < 1200 ? 36 : dist < 2400 ? 24 : dist < 3400 ? 15 : 10;
+        const count = 2 + (rand() < 0.5 ? 1 : 0);
+        const slots = [[-0.26, 0, 0.46, 0.9], [0.26, 0, 0.46, 0.9], [-0.26, 0.27, 0.44, 0.42], [0.26, 0.27, 0.44, 0.42]];
+        for (let k = 0; k < count; k++) {
+          const [ox, oz, fw, fd] = slots[k];
+          const w = BZ * fw * randRange(0.8, 1), d = BZ * fd * randRange(0.8, 1);
+          const h = randRange(maxH * 0.35, maxH);
+          const x = cx + ox * BZ, z = cz + oz * BZ;
+          items.push({ x, z, w, d, h, color: palettes[Math.floor(rand() * palettes.length)] });
+          this.addColliderLive(x, z, w, d, h);
+        }
+      }
+    }
+    if (!items.length) return null;
+    const geo = new THREE.BoxGeometry(1, 1, 1);
+    const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85, metalness: 0.05 });
+    const mesh = new THREE.InstancedMesh(geo, mat, items.length);
+    const d = new THREE.Object3D(); const col = new THREE.Color();
+    items.forEach((it, i) => {
+      d.position.set(it.x, it.h / 2, it.z); d.scale.set(it.w, it.h, it.d); d.rotation.set(0, 0, 0);
+      d.updateMatrix(); mesh.setMatrixAt(i, d.matrix);
+      mesh.setColorAt(i, col.setHex(it.color));
+    });
+    mesh.instanceMatrix.needsUpdate = true; if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    mesh.castShadow = false; mesh.receiveShadow = false;
+    this.scene.add(mesh);
+    return mesh;
+  }
+
+  /** Ajoute un collider APRÈS l'indexation initiale (chunks streamés). */
+  addColliderLive(x, z, w, d, h = 0) {
+    const c = { minX: x - w / 2, maxX: x + w / 2, minZ: z - d / 2, maxZ: z + d / 2, h };
+    this.colliders.push(c);
+    const x0 = Math.floor(c.minX / P), x1 = Math.floor(c.maxX / P);
+    const z0 = Math.floor(c.minZ / P), z1 = Math.floor(c.maxZ / P);
+    for (let gx = x0; gx <= x1; gx++) for (let gz = z0; gz <= z1; gz++) {
+      const k = gx + ',' + gz;
+      if (!this.colliderGrid.has(k)) this.colliderGrid.set(k, []);
+      this.colliderGrid.get(k).push(c);
+    }
+  }
+
+  /** Matérialise les chunks autour du joueur, cache les lointains. */
+  updateStreaming(px, pz) {
+    this.focus.x = px; this.focus.z = pz;
+    const bi = Math.floor((px + WORLD_HALF) / P) + CORE_I;
+    const bj = Math.floor((pz + WORLD_HALF) / P) + CORE_I;
+    const ci = Math.floor(bi / CHUNK), cj = Math.floor(bj / CHUNK);
+    const R = CFG.city.viewChunks;
+    for (let i = ci - R; i <= ci + R; i++) for (let j = cj - R; j <= cj + R; j++) {
+      if (i < 0 || j < 0 || i * CHUNK >= MN || j * CHUNK >= MN) continue;
+      const key = i + ',' + j;
+      if (!this.chunks.has(key)) this.chunks.set(key, this.genChunk(i, j));
+    }
+    for (const [key, mesh] of this.chunks) {
+      if (!mesh) continue;
+      const [i, j] = key.split(',').map(Number);
+      mesh.visible = Math.abs(i - ci) <= R + 1 && Math.abs(j - cj) <= R + 1;
+    }
+  }
+
+  addCollider(x, z, w, d, h = 0) {
+    this.colliders.push({ minX: x - w / 2, maxX: x + w / 2, minZ: z - d / 2, maxZ: z + d / 2, h });
   }
   indexColliders() {
     for (const c of this.colliders) {
@@ -170,9 +377,10 @@ export class City {
     }
   }
   // Repousse un cercle (x,z,r) hors des AABB. Retourne la position corrigée.
-  collide(x, z, r) {
+  collide(x, z, r, y = 0) {
     const list = this.colliderGrid.get(Math.floor(x / P) + ',' + Math.floor(z / P));
     if (list) for (const c of list) {
+      if (c.h && y > 0.6 && c.h <= y + 0.6) continue;   // on marche sur le toit
       const nx = clamp(x, c.minX, c.maxX), nz = clamp(z, c.minZ, c.maxZ);
       let dx = x - nx, dz = z - nz; const d2 = dx * dx + dz * dz;
       if (d2 < r * r) {
@@ -184,19 +392,33 @@ export class City {
         } else { const d = Math.sqrt(d2); x = nx + (dx / d) * r; z = nz + (dz / d) * r; }
       }
     }
-    const lim = WORLD_HALF + 26; // barrière monde douce
-    return { x: clamp(x, -lim, lim), z: clamp(z, -lim, lim) };
+    const lim = METRO_MAX - 40;   // limites de la métropole
+    return { x: clamp(x, METRO_MIN + 40, lim), z: clamp(z, METRO_MIN + 40, lim) };
   }
   isColliding(x, z, r) {
     const o = this.collide(x, z, r);
     return Math.abs(o.x - x) > 0.001 || Math.abs(o.z - z) > 0.001;
   }
-  groundY(x, z) { // hauteur trottoir
+  groundY(x, z, y = 0) { // hauteur trottoir, puis éventuel toit sous les pieds
     const lx = ((x % P) + P) % P, lz = ((z % P) + P) % P;
     const inX = lx > (P - PLAT) / 2 && lx < (P + PLAT) / 2;
     const inZ = lz > (P - PLAT) / 2 && lz < (P + PLAT) / 2;
-    return (inX && inZ && Math.abs(x) < WORLD_HALF + 4 && Math.abs(z) < WORLD_HALF + 4) ? 0.15 : 0;
+    let ground = (inX && inZ && Math.abs(x) < WORLD_HALF + 4 && Math.abs(z) < WORLD_HALF + 4) ? 0.15 : 0;
+    if (y > 0.6) {
+      // Toits : on peut se déplacer au sommet d'un bâtiment (brief : monter
+      // en haut des immeubles, surtout ceux achetés).
+      const list = this.colliderGrid.get(Math.floor(x / P) + ',' + Math.floor(z / P));
+      if (list) for (const c of list) {
+        if (!c.h || c.h > y + 1.2) continue;
+        if (x < c.minX || x > c.maxX || z < c.minZ || z > c.maxZ) continue;
+        if (c.h > ground) ground = c.h;
+      }
+    }
+    return ground;
   }
+
+  /** Point au sommet d'un bâtiment (accès toit / héliport). */
+  roofPoint(b) { return { x: b.x, y: (b.h ?? 10) + 0.25, z: b.z }; }
 
   // ------------------------------ Bâtiments --------------------------------
   buildBlock(cx, cz, district) {
@@ -215,8 +437,10 @@ export class City {
       const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), [side, side, roofMat, roofMat, side, side]);
       mesh.position.set(x, h / 2 + 0.15, z);
       mesh.castShadow = true; mesh.receiveShadow = true;
+      // statique : aucune mise à jour de matrice par frame (gain CPU)
+      mesh.matrixAutoUpdate = false; mesh.updateMatrix();
       this.scene.add(mesh);
-      this.addCollider(x, z, w, d);
+      this.addCollider(x, z, w, d, h);
       // porte : face la plus proche d'une route
       const door = this.doorFor(x, z, w, d);
       const kind = district === 'downtown' || palette === 'office' || palette === 'glass' ? 'work'
@@ -227,7 +451,7 @@ export class City {
         const ac = new THREE.Mesh(new THREE.BoxGeometry(w * 0.3, 1.2, d * 0.3),
           new THREE.MeshStandardMaterial({ color: 0x9aa0a8, roughness: 0.9 }));
         ac.position.set(x + randRange(-w / 5, w / 5), h + 0.75, z + randRange(-d / 5, d / 5));
-        ac.castShadow = true; this.scene.add(ac);
+        ac.castShadow = true; ac.matrixAutoUpdate = false; ac.updateMatrix(); this.scene.add(ac);
       }
     }
     // arbres de trottoir du bloc
@@ -426,20 +650,28 @@ export class City {
       }
     }
   }
-  update(dt) {
+  update(dt, ctx) {
+    this._streamT += dt;
+    if (this._streamT > 0.4 && ctx?.playerPos) {
+      this._streamT = 0;
+      const p = ctx.playerPos();
+      this.updateStreaming(p.x, p.z);
+    }
     const before = Math.floor(this.lightPhase / 1.5);
     this.lightPhase += dt;
     if (Math.floor(this.lightPhase / 1.5) !== before) this.setLightVisuals();
   }
 
   // ------------------------------ Road graph -------------------------------
+  // Graphe routier sur TOUTE la métropole (129 × 129 nœuds, 8,2 km).
+  // Le cœur reste aux mêmes coordonnées : aucune régression de gameplay.
   buildRoadGraph() {
-    for (let i = 0; i <= N; i++) {
+    for (let i = 0; i <= MN; i++) {
       this.nodes[i] = [];
-      for (let j = 0; j <= N; j++) this.nodes[i][j] = { i, j, x: ROAD_COORDS[i], z: ROAD_COORDS[j] };
+      for (let j = 0; j <= MN; j++) this.nodes[i][j] = { i, j, x: metroX(i), z: metroX(j) };
     }
   }
-  nodeAt(i, j) { return (i >= 0 && i <= N && j >= 0 && j <= N) ? this.nodes[i][j] : null; }
+  nodeAt(i, j) { return (i >= 0 && i <= MN && j >= 0 && j <= MN) ? this.nodes[i][j] : null; }
   nextNode(node, dirIdx) {
     const d = DIRS[dirIdx];
     return this.nodeAt(node.i + d.x, node.j + d.z);
@@ -449,15 +681,21 @@ export class City {
     out.set(node.x + r.x * laneOffset, 0, node.z + r.z * laneOffset);
     return out;
   }
-  randomNode() { return this.nodes[randInt(0, N)][randInt(0, N)]; }
+  randomNode() {
+    // Trafic et missions : rester autour du joueur, jamais à 4 km.
+    const f = this.focus || { x: 0, z: 0 };
+    const i = clamp(nodeIndex(f.x) + randInt(-7, 7), 0, MN);
+    const j = clamp(nodeIndex(f.z) + randInt(-7, 7), 0, MN);
+    return this.nodes[i][j];
+  }
   randomEdgeNode() {
-    const side = randInt(0, 3), k = randInt(0, N);
-    return [this.nodes[0][k], this.nodes[N][k], this.nodes[k][0], this.nodes[k][N]][side];
+    const f = this.focus || { x: 0, z: 0 };
+    const a = rand() * Math.PI * 2, r = randRange(180, 320);
+    const n = this.nearestNode(f.x + Math.sin(a) * r, f.z + Math.cos(a) * r);
+    return n || this.nodes[CORE_I][CORE_I];
   }
   nearestNode(x, z) {
-    const i = clamp(Math.round((x + WORLD_HALF) / P), 0, N);
-    const j = clamp(Math.round((z + WORLD_HALF) / P), 0, N);
-    return this.nodes[i][j];
+    return this.nodes[nodeIndex(x)][nodeIndex(z)];
   }
 
   // ------------------------------ Graphe piéton ---------------------------
@@ -510,6 +748,7 @@ export class City {
     for (const m of windowMaterials) m.emissiveIntensity = f * 1.15;
     if (this.lampHeadMat) this.lampHeadMat.emissiveIntensity = f * 2.4;
     if (this.lampGlowMat) this.lampGlowMat.opacity = f * 0.16;
+    if (this.highwayLampMat) this.highwayLampMat.emissiveIntensity = f * 2.6;
   }
 
   randomBuilding(kind) {

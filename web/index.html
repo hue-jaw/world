@@ -26,6 +26,9 @@
       <div><kbd>Maj</kbd><span>Sprinter · <kbd>Espace</kbd> Sauter / frein à main</span></div>
       <div><kbd>H</kbd><span>Klaxon · <kbd>L</kbd> Phares · <kbd>M</kbd> Son</span></div>
       <div><kbd>T</kbd><span>Avancer le temps · <kbd>G</kbd> Changer la météo</span></div>
+      <div><kbd>C</kbd><span>Caméra auto / libre · <kbd>B</kbd> Boutique &amp; garage</span></div>
+      <div><kbd>E</kbd><span>Monter au toit d'un immeuble acheté</span></div>
+      <div><kbd>🎮</kbd><span>Manette Xbox / PS4 / PS5 : stick, <kbd>X</kbd> entrer, <kbd>A</kbd> sauter</span></div>
     </div>
     <button id="btn-play">▶ &nbsp;ENTRER DANS METROPOLIS</button>
     <div class="title-mission">🚚 Mission : récupérez le colis au marqueur <b class="gold">jaune</b>, livrez-le au marqueur <b class="cyan">bleu</b> avant la fin du chrono. Évitez la police !</div>
@@ -44,11 +47,13 @@
   <!-- boussole -->
   <div id="compass"><div id="compass-inner"></div><div id="compass-marker">▼</div></div>
 
-  <!-- argent + police -->
+  <!-- argent + police + santé -->
   <div id="hud-status" class="panel">
     <div id="hud-money">$ 0</div>
     <div id="hud-wanted">☆☆☆</div>
     <div id="hud-deliveries">📦 0 livraison</div>
+    <div id="health-wrap" title="Santé"><div id="health-bar"></div></div>
+    <div id="hud-gamepad">🎮 non détectée</div>
   </div>
 
   <!-- objectif mission -->
@@ -68,6 +73,7 @@
 
   <!-- notifications -->
   <div id="toasts"></div>
+  <div id="gps-hint">🧭 Suivez les flèches au sol et sur la mini-carte</div>
 
   <!-- barre d'outils démo (systèmes vivants) -->
   <div id="toolbar" class="panel">
@@ -82,7 +88,31 @@
     <button id="tb-speed" title="Vitesse du temps">⏩ ×1</button>
     <button id="tb-sound" title="Son on/off (M)">🔊</button>
     <button id="tb-debug" title="Panneau de debug (F1)">🛠️</button>
+    <span class="tb-sep"></span>
+    <button id="tb-shop" title="Boutique / garage (B)">🏪 Boutique</button>
   </div>
+
+  <!-- ============ BOUTIQUE / GARAGE / LOGEMENTS ============ -->
+  <div id="shop" class="hidden">
+    <div class="shop-box">
+      <div class="shop-head">
+        <h2>🏪 METROPOLIS — Boutique</h2>
+        <div class="shop-money">Solde : <b id="shop-balance">$ 0</b></div>
+        <button id="shop-close" title="Fermer (B / Échap)">✕</button>
+      </div>
+      <div class="shop-tabs">
+        <button data-tab="houses" class="active">🏠 Logements</button>
+        <button data-tab="cars">🚗 Véhicules</button>
+        <button data-tab="garage">🔧 Garage</button>
+        <button data-tab="upgrades">⚙️ Améliorations</button>
+      </div>
+      <div id="shop-body" class="shop-body"></div>
+      <div class="shop-foot">Gagnez de l'argent avec les missions · <kbd>B</kbd> fermer</div>
+    </div>
+  </div>
+
+  <!-- écran de blessure / réanimation -->
+  <div id="downed" class="hidden"><div class="busted-text">VOUS ÊTES BLESSÉ</div><div id="downed-sub">Transport à l'hôpital…</div></div>
 
   <!-- debug -->
   <div id="debug-panel" class="panel hidden"></div>

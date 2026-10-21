@@ -71,17 +71,26 @@ export const dist2D = (ax, az, bx, bz) => Math.hypot(bx - ax, bz - az);
 // 1 unité = 1 mètre. Ville en grille : blocs + routes (voir city.js).
 export const CFG = {
   city: {
-    blocksPerSide: 7,        // 7x7 blocs
+    blocksPerSide: 7,        // cœur détaillé (7x7 blocs = 448 m)
     pitch: 64,               // distance centre-à-centre entre blocs (m)
     platformSize: 46,        // plateau du bloc (trottoirs inclus)
     buildZone: 38,           // zone constructible au centre du bloc
     get roadWidth() { return this.pitch - this.platformSize; }, // 18 m
     laneOffset: 3.4,         // décalage de voie (conduite à droite)
     seed: 20261021,
+    // ---- métropole étendue (streamée) ----
+    metroBlocks: 128,        // 128 × 64 m = 8,19 km de côté
+    chunkBlocks: 4,          // 4 × 4 blocs par chunk de streaming (256 m)
+    viewChunks: 2,           // rayon de chunks matérialisés (~640 m)
+    get metroHalf() { return (this.metroBlocks * this.pitch) / 2; },
   },
   time: {
-    dayLengthSec: 240,       // un jour de jeu = 4 minutes réelles (x1)
+    // Cycle réaliste : 20 min de jour (06:00→20:00) + 20 min de nuit.
+    daySeconds: 1200,
+    nightSeconds: 1200,
     startHour: 9.0,
+    dayStart: 6.0, dayEnd: 20.0,
+    get dayLengthSec() { return this.daySeconds + this.nightSeconds; },
   },
   traffic: {
     speedLimitMs: 11.5,      // ~41 km/h en ville
@@ -111,6 +120,50 @@ export const VEHICLE_TYPES = {
   Utilitaire:{ len: 5.4, wid: 2.0,  bodyH: 1.5,  cabinH: 0.0,  topSpeed: 30, accel: 6,    grip: 8,  colors: [0xe8e8e8, 0xb9c0c9, 0x8a5a2b], weight: 8, van: true },
   Police:    { len: 4.8, wid: 1.9,  bodyH: 0.62, cabinH: 0.52, topSpeed: 52, accel: 12.5, grip: 11, colors: [0xf2f4f7], weight: 0, police: true },
 };
+// ---- Moto (2 roues) : ajoutée à la flotte v0.3 ----
+VEHICLE_TYPES.Moto = {
+  len: 2.15, wid: 0.78, bodyH: 0.5, cabinH: 0, topSpeed: 46, accel: 13.5, grip: 11,
+  colors: [0xd7263d, 0x14161a, 0x0a84ff, 0xf5d90a], weight: 10, moto: true,
+};
+
+// ------------------------- Économie (brief §12) -----------------------------
+// Tout est data-driven : prix dans une table, aucune valeur en dur dans l'UI.
+export const ECONOMY = {
+  startMoney: 600,
+  missionRewardBase: 55,
+  // Garage : point fixe du quartier, agrandissable (emplacements + équipements)
+  garage: {
+    x: 32, z: -150,              // sur la rue, à côté du centre
+    levels: [
+      { slots: 2, cost: 0,     label: 'Garage 2 places' },
+      { slots: 4, cost: 6000,  label: 'Garage 4 places' },
+      { slots: 6, cost: 15000, label: 'Atelier 6 places' },
+    ],
+  },
+  // Véhicules achetables (prix en crédits)
+  cars: [
+    { type: 'Moto',       price: 3200,  label: 'Moto urbaine' },
+    { type: 'Citadine',   price: 4500,  label: 'Citadine' },
+    { type: 'Berline',    price: 7800,  label: 'Berline' },
+    { type: 'Taxi',       price: 9000,  label: 'Taxi' },
+    { type: 'SUV',        price: 11500, label: 'SUV' },
+    { type: 'Utilitaire', price: 9800,  label: 'Utilitaire' },
+    { type: 'Sportive',   price: 24000, label: 'Sportive' },
+  ],
+  upgrades: {
+    moteur: { label: 'Moteur',  stat: 'topSpeed', costs: [1800, 4200, 9000],  perLevel: 0.10, unit: 'km/h' },
+    pneus:  { label: 'Pneus',   stat: 'grip',     costs: [1200, 3000, 6800],  perLevel: 0.09 },
+    freins: { label: 'Freins',  stat: 'accel',    costs: [1000, 2600, 6000],  perLevel: 0.10 },
+  },
+  housing: {
+    count: 8,                 // logements achetables générés dans le cœur
+    basePrice: 5000,
+    pricePerMeter: 260,       // prix ≈ base + hauteur × ce facteur
+    maxPrice: 42000,
+  },
+  health: { max: 100, fallSafe: 9.5, fallDamage: 7, regenPerSec: 1.6, hospitalCost: 250 },
+};
+
 export function randomVehicleType() {
   const entries = Object.entries(VEHICLE_TYPES).filter(([, v]) => v.weight > 0);
   const total = entries.reduce((s, [, v]) => s + v.weight, 0);

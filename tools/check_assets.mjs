@@ -39,7 +39,7 @@ console.log(`  ${Object.keys(MODELS).length} fichiers, ${(Object.values(MODELS).
 
 await Assets.init();
 ok(Assets.ready, 'bibliothèque prête');
-ok(Object.keys(Assets.vehicleProtos).length === 7, '7 types de véhicules chargés',
+ok(Object.keys(Assets.vehicleProtos).length === 8, '8 types de véhicules chargés',
   Object.keys(Assets.vehicleProtos).join(', '));
 ok(Object.keys(Assets.citizenProtos).length === 5, '5 variantes de citoyens chargées');
 ok(!!Assets.playerProto, 'modèle du joueur chargé');
@@ -56,8 +56,9 @@ for (const [type, spec] of Object.entries(VEHICLE_TYPES)) {
   const dWid = Math.abs(size.x - spec.wid) / spec.wid;
   ok(dLen < 0.06, `${type} : longueur conforme à la physique`, `${f2(size.z)} m vs ${spec.len} m`);
   ok(dWid < 0.35, `${type} : largeur plausible`, `${f2(size.x)} m vs ${spec.wid} m`);
-  ok(v.wheels.length === 4, `${type} : 4 roues détectées`, `${v.wheels.length}`);
-  ok(v.frontWheels.length === 2, `${type} : 2 roues avant`, `${v.frontWheels.length}`);
+  const expectedWheels = type === 'Moto' ? 2 : 4;
+  ok(v.wheels.length === expectedWheels, `${type} : ${expectedWheels} roues détectées`, `${v.wheels.length}`);
+  ok(v.frontWheels.length === expectedWheels / 2, `${type} : ${expectedWheels / 2} roue(s) avant`, `${v.frontWheels.length}`);
   ok(v.wheelRadius > 0.15 && v.wheelRadius < 0.8, `${type} : rayon de roue plausible`, `${f2(v.wheelRadius)} m`);
   const ground = Math.abs(box.min.y);
   ok(ground < 0.08, `${type} : posé au sol`, `bas à ${f2(box.min.y)} m`);
@@ -107,7 +108,8 @@ console.log('\n— Intégration gameplay (modèles réellement câblés) —');
   const fakeScene = { add() {} };
   for (const type of Object.keys(VEHICLE_TYPES)) {
     const v = new Vehicle(fakeScene, type);
-    ok(v.wheels.length === 4 && v.frontPivots.length === 2,
+    const exp = type === 'Moto' ? 2 : 4;
+    ok(v.wheels.length === exp && v.frontPivots.length === exp / 2,
       `Vehicle(${type}) : roues du modèle pilotées`, `${v.wheels.length} roues / ${v.frontPivots.length} avant`);
     ok(v.wheelR > 0.15, `Vehicle(${type}) : rayon de roue transmis`, `${f2(v.wheelR)} m`);
   }

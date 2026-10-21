@@ -6,6 +6,8 @@
 // ============================================================================
 import * as THREE from 'three';
 import Assets from './assets.js';
+import GamepadInput from './input.js';
+import { ECONOMY } from './core.js';
 import { Bus, clamp, damp, angleDamp } from './core.js';
 
 // Coin de trottoir a l'intersection (32,32) : garanti sans batiment.
@@ -63,6 +65,12 @@ export class Player {
     this.shake = 0;
     this._camPos = new THREE.Vector3(SPAWN.x, 4, SPAWN.z + 8);
     this.keys = new Set();
+    // --- v0.3 : manette, caméra automatique, santé ---
+    this.gamepad = new GamepadInput();
+    this.autoCam = true;                 // la caméra suit la direction (touche C)
+    this.health = ECONOMY.health.max;
+    this.maxHealth = ECONOMY.health.max;
+    this._hurtT = 0;
     this._bindInput(rendererDom);
   }
 
@@ -72,6 +80,7 @@ export class Player {
       this.keys.add(e.code);
       if (e.code === 'KeyF' && !e.repeat) this._wantInteract = true;
       if (e.code === 'KeyH' && this.vehicle) this._wantHonk = true;
+      if (e.code === 'KeyC' && !e.repeat) this.autoCam = !this.autoCam;
     });
     window.addEventListener('keyup', (e) => this.keys.delete(e.code));
     window.addEventListener('blur', () => this.keys.clear());
@@ -134,6 +143,24 @@ export class Player {
 
   // -------------------------------- Update ---------------------------------
   update(dt, ctx) {
+    // --- entrées manette (hot-plug, axes analogiques, boutons) ---
+    const pad = this.gamepad;
+    pad.poll();
+    if (pad.connected) {
+      if (pad.pressed('X')) this._wantInteract = true;
+      if (pad.pressed('Y') && this.vehicle) this._wantHonk = true;
+      if (pad.pressed('START')) ctx.ui?.toggleDebug?.();
+      if (Math.abs(pad.lookX) > 0 || Math.abs(pad.lookY) > 0) {
+        this.camYaw -= pad.lookX * 2.6 * dt;
+        this.camPitch = clamp(this.camPitch - pad.lookY * 1.7 * dt, -0.15, 1.15);
+        this._camFreeT = 2.2;
+      }
+    }
+    // --- santé : régénération hors danger ---
+    this._hurtT = Math.max(0, this._hurtT - dt);
+    if (this._hurtT <= 0 && this.health < this.maxHealth && this.health > 0) {
+      this.health = Math.min(this.maxHealth, this.health + ECONOMY.health.regenPerSec * dt);
+    }
     if (this._wantInteract) { this._wantInteract = false; this._tryInteract(ctx); }
     if (this._wantHonk) { this._wantHonk = false; ctx.audio?.honk(); }
     this._camFreeT = Math.max(0, (this._camFreeT || 0) - dt);
@@ -147,9 +174,15 @@ export class Player {
   }
 
   _updateOnFoot(dt, ctx) {
-    const fwd = this.key('KeyW', 'ArrowUp') ? 1 : this.key('KeyS', 'ArrowDown') ? -1 : 0;
-    const strafe = this.key('KeyD', 'ArrowRight') ? 1 : this.key('KeyA', 'ArrowLeft') ? -1 : 0;
-    const sprint = this.key('ShiftLeft', 'ShiftRight');
+    let fwd = this.key('KeyW', 'ArrowUp') ? 1 : this.key('KeyS', 'ArrowDown') ? -1 : 0;
+    let strafe = this.key('KeyD', 'ArrowRight') ? 1 : this.key('KeyA', 'ArrowLeft') ? -1 : 0;
+    // manette : stick gauche analogique (prioritaire dès qu'il bouge)
+    if (this.gamepad.connected) {
+      if (Math.abs(this.gamepad.moveY) > 0 || Math.abs(this.gamepad.moveX) > 0) {
+        fwd = this.gamepad.moveY; strafe = this.gamepad.moveX;
+      }
+    }
+    const sprint = this.key('ShiftLeft', 'ShiftRight') || this.gamepad.down('RB');
     const speed = sprint ? 6.6 : 3.3;
     // directions relatives à la caméra
     const sin = Math.sin(this.camYaw), cos = Math.cos(this.camYaw);
@@ -157,23 +190,32 @@ export class Player {
     let mz = (-cos * fwd - sin * strafe);
     const len = Math.hypot(mx, mz);
     if (len > 0.01) {
+      const intensity = Math.min(1, len);
       mx /= len; mz /= len;
-      this.vel.x = damp(this.vel.x, mx * speed, 10, dt);
-      this.vel.z = damp(this.vel.z, mz * speed, 10, dt);
+      this.vel.x = damp(this.vel.x, mx * speed * intensity, 10, dt);
+      this.vel.z = damp(this.vel.z, mz * speed * intensity, 10, dt);
       this.heading = angleDamp(this.heading, Math.atan2(mx, mz), 12, dt);
     } else {
       this.vel.x = damp(this.vel.x, 0, 10, dt);
       this.vel.z = damp(this.vel.z, 0, 10, dt);
     }
     // saut + gravité
-    const ground = ctx.city.groundY(this.pos.x, this.pos.z);
-    if (this.key('Space') && this.grounded) { this.vy = 7.4; this.grounded = false; }
+    const ground = ctx.city.groundY(this.pos.x, this.pos.z, this.pos.y);
+    if ((this.key('Space') || this.gamepad.pressed('A')) && this.grounded) { this.vy = 7.4; this.grounded = false; }
     this.vy -= 22 * dt;
     this.pos.x += this.vel.x * dt;
     this.pos.z += this.vel.z * dt;
     this.pos.y += this.vy * dt;
-    if (this.pos.y <= ground) { this.pos.y = ground; this.vy = 0; this.grounded = true; }
-    const c = ctx.city.collide(this.pos.x, this.pos.z, 0.38);
+    if (this.pos.y <= ground) {
+      // --- blessure à l'atterrissage (brief §23) ---
+      const impact = -this.vy;
+      if (!this.grounded && impact > ECONOMY.health.fallSafe) {
+        const dmg = Math.min(65, (impact - ECONOMY.health.fallSafe) * ECONOMY.health.fallDamage);
+        this.damage(dmg, ctx, 'chute');
+      }
+      this.pos.y = ground; this.vy = 0; this.grounded = true;
+    }
+    const c = ctx.city.collide(this.pos.x, this.pos.z, 0.38, this.pos.y);
     this.pos.x = c.x; this.pos.z = c.z;
     this.group.rotation.y = this.heading;
     // animation de marche
@@ -190,25 +232,51 @@ export class Player {
 
   _updateDriving(dt, ctx) {
     const v = this.vehicle;
-    const up = this.key('KeyW', 'ArrowUp'), down = this.key('KeyS', 'ArrowDown');
-    v.inputs.throttle = up ? 1 : down ? -1 : 0;
-    const steerTarget = this.key('KeyA', 'ArrowLeft') ? 1 : this.key('KeyD', 'ArrowRight') ? -1 : 0;
+    let throttle = this.key('KeyW', 'ArrowUp') ? 1 : this.key('KeyS', 'ArrowDown') ? -1 : 0;
+    let steerTarget = this.key('KeyA', 'ArrowLeft') ? 1 : this.key('KeyD', 'ArrowRight') ? -1 : 0;
+    if (this.gamepad.connected) {
+      const rt = this.gamepad.value('RT'), lt = this.gamepad.value('LT');
+      if (rt > 0.05 || lt > 0.05) throttle = rt - lt;
+      else if (Math.abs(this.gamepad.moveY) > 0) throttle = this.gamepad.moveY;
+      if (Math.abs(this.gamepad.moveX) > 0) steerTarget = -this.gamepad.moveX;
+    }
+    v.inputs.throttle = clamp(throttle, -1, 1);
+    v.inputs.stickAnalog = this.gamepad.connected && Math.abs(this.gamepad.moveX) > 0;
     const rate = steerTarget !== 0 ? 3.4 : 5.5;
     this.steerInput = clamp(this.steerInput + clamp(steerTarget - this.steerInput, -rate * dt, rate * dt), -1, 1);
     v.inputs.steer = this.steerInput;
-    v.inputs.handbrake = this.key('Space');
+    v.inputs.handbrake = this.key('Space') || this.gamepad.down('A');
     v.inputs.brake = false;
     // le mesh joueur suit discrètement (pour les systèmes qui lisent pos)
     this.pos.copy(v.pos);
-    // caméra : se réaligne derrière le véhicule quand la souris est libre
-    if (this._camFreeT <= 0) {
+    // caméra : se réaligne derrière le véhicule quand le joueur ne regarde pas
+    if (this._camFreeT <= 0 && this.autoCam) {
       this.camYaw = angleDamp(this.camYaw, v.heading + Math.PI, Math.abs(v.vf) > 3 ? 2.6 : 0.9, dt);
       this.camPitch = damp(this.camPitch, 0.3, 1.2, dt);
     }
     ctx.audio?.setEngine(Math.abs(v.vf) / v.spec.topSpeed, v.inputs.throttle !== 0);
   }
 
+  /** Applique des dégâts et prévient les systèmes (UI, audio, respawn). */
+  damage(amount, ctx, reason = '') {
+    if (amount <= 0 || this.health <= 0) return;
+    this.health = Math.max(0, this.health - amount);
+    this._hurtT = 4.5;
+    this.shake = Math.min(0.9, this.shake + amount * 0.012);
+    Bus.emit('playerDamage', { amount, health: this.health, reason });
+    if (this.health <= 0) Bus.emit('playerDown', { reason });
+  }
+
+  heal(amount) {
+    this.health = Math.min(this.maxHealth, this.health + amount);
+  }
+
   _updateCamera(dt, ctx) {
+    // --- caméra automatique à pied : elle suit la direction de déplacement ---
+    if (!this.vehicle && this.autoCam && this._camFreeT <= 0) {
+      const sp = Math.hypot(this.vel.x, this.vel.z);
+      if (sp > 0.6) this.camYaw = angleDamp(this.camYaw, this.heading + Math.PI, 2.4, dt);
+    }
     const target = new THREE.Vector3();
     let dist = this.camDist, height = 1.7, fov = 62;
     if (this.vehicle) {

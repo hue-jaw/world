@@ -105,3 +105,49 @@ kbd { background:#1c2432; border:1px solid #3a465e; border-bottom-width:3px; bor
   .controls-grid { grid-template-columns:1fr; }
   #compass { width:220px; } #minimap-wrap { transform:scale(.72); transform-origin:bottom left; }
 }
+
+/* ===================== v0.3 : santé, manette, boutique ===================== */
+#health-wrap { width:100%; height:7px; background:rgba(255,255,255,.10); border-radius:4px; margin-top:6px; overflow:hidden; }
+#health-bar { height:100%; width:100%; border-radius:4px; background:linear-gradient(90deg,#43e97b,#38f9d7); transition:width .18s linear, background .3s; }
+#health-bar.hurt { background:linear-gradient(90deg,#ff6b6b,#ffb347); }
+#health-bar.critical { background:linear-gradient(90deg,#ff2d2d,#ff7a00); animation:critPulse 1s infinite; }
+@keyframes critPulse { 0%,100% { opacity:1; } 50% { opacity:.55; } }
+#hud-gamepad { font-size:10.5px; letter-spacing:.4px; color:#7f97b5; margin-top:5px; }
+#hud-gamepad.on { color:#7ce38b; }
+
+#shop { position:absolute; inset:0; z-index:40; display:flex; align-items:center; justify-content:center;
+  background:rgba(4,8,14,.66); backdrop-filter:blur(7px); }
+.shop-box { width:min(760px,92vw); max-height:82vh; display:flex; flex-direction:column;
+  background:linear-gradient(180deg,rgba(20,29,43,.98),rgba(12,18,28,.98));
+  border:1px solid #2d4364; border-radius:18px; box-shadow:0 30px 80px rgba(0,0,0,.6); overflow:hidden; }
+.shop-head { display:flex; align-items:center; gap:14px; padding:16px 20px; border-bottom:1px solid #24344c; }
+.shop-head h2 { margin:0; font-size:19px; letter-spacing:1px; color:#e9f2ff; }
+.shop-money { margin-left:auto; font-size:13px; color:#9fb6d4; }
+.shop-money b { color:#7ce38b; font-size:16px; }
+#shop-close { background:#1b2739; border:1px solid #33507a; color:#cfe0f5; border-radius:9px;
+  width:32px; height:32px; font-size:15px; cursor:pointer; }
+.shop-tabs { display:flex; gap:6px; padding:12px 18px 0; flex-wrap:wrap; }
+.shop-tabs button { background:#152031; border:1px solid #2a3f5e; color:#a9c0dd; border-radius:9px;
+  padding:8px 13px; font-size:13px; cursor:pointer; }
+.shop-tabs button.active { background:#20518f; border-color:#5b9bff; color:#fff; }
+.shop-body { padding:16px 18px 20px; overflow-y:auto; display:flex; flex-direction:column; gap:9px; }
+.shop-item { display:flex; align-items:center; gap:12px; padding:11px 13px; border-radius:12px;
+  background:rgba(255,255,255,.035); border:1px solid rgba(255,255,255,.06); }
+.shop-item .si-main { flex:1; min-width:0; }
+.shop-item .si-title { font-size:14px; color:#e8f1ff; font-weight:600; }
+.shop-item .si-sub { font-size:11.5px; color:#8ea6c4; margin-top:2px; }
+.shop-item .si-price { font-size:13px; color:#ffd76e; font-weight:700; white-space:nowrap; }
+.shop-item button { background:#1f6f43; border:1px solid #38b06a; color:#d8ffe6; border-radius:9px;
+  padding:8px 13px; font-size:12.5px; cursor:pointer; white-space:nowrap; }
+.shop-item button:disabled { background:#242c38; border-color:#39465a; color:#6c7c92; cursor:not-allowed; }
+.shop-item.owned { border-color:rgba(124,227,139,.35); background:rgba(124,227,139,.07); }
+.shop-item .si-owned { color:#7ce38b; font-size:12px; font-weight:700; }
+.shop-empty { color:#7f97b5; font-size:13px; padding:14px 4px; }
+
+#downed { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center;
+  background:radial-gradient(ellipse, rgba(90,0,0,.30), rgba(0,0,0,.82)); z-index:35; }
+#downed-sub { font-size:17px; color:#ffd7d7; margin-top:8px; }
+
+/* guidage GPS : petit rappel discret */
+#gps-hint { position:absolute; left:50%; bottom:86px; transform:translateX(-50%); font-size:12px;
+  color:#9fe6ff; letter-spacing:1px; text-shadow:0 0 12px rgba(53,214,255,.55); opacity:.85; }

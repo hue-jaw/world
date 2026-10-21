@@ -60,7 +60,7 @@ export class MissionSystem {
       if (dist > 130 && dist < 430) break;
     }
     this.pickupB = pickup; this.dropB = drop;
-    this.reward = Math.round(55 + dist * 0.55);
+    this.reward = Math.round(90 + dist * 0.8);
     const slack = Math.max(1.12, 1.95 - this.deliveries * 0.07);   // difficulté progressive
     this.timeTotal = this.timeLeft = Math.round((dist / 11) * slack + 22);
     this.phase = 'pickup';

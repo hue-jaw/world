@@ -1,12 +1,12 @@
 {
   "name": "metropolis",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "METROPOLIS - open-world urbain vivant (vertical slice + projet UE5.5)",
   "type": "module",
   "scripts": {
     "build:assets": "node tools/build_assets.mjs",
     "build": "node tools/build_single_file.mjs",
-    "test": "node tools/smoke_test.mjs && node tools/check_assets.mjs"
+    "test": "node tools/smoke_test.mjs && node tools/test_features.mjs && node tools/test_integration.mjs && node tools/check_assets.mjs"
   }
 }

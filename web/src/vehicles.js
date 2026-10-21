@@ -387,6 +387,25 @@ export class TrafficSystem {
     this.giftCar = gift;
   }
 
+  /** Véhicule possédé (acheté au garage) : garé, conductible, spec améliorée. */
+  spawnOwned(car, x, z, heading, spec) {
+    const v = new Vehicle(this.scene, car.type);
+    if (spec) v.spec = { ...v.spec, ...spec };
+    v.placeAt(x, z, heading);
+    v.parked = true; v.owned = true; v.carId = car.id;
+    this.vehicles.push(v);
+    return v;
+  }
+  clearOwned() {
+    for (const v of this.vehicles) {
+      if (!v.owned) continue;
+      this.scene.remove(v.group);
+      v.active = false;
+      if (v.spotLights) for (const l of v.spotLights) this.scene.remove(l);
+    }
+    this.vehicles = this.vehicles.filter((v) => !v.owned);
+  }
+
   trafficTarget(hour) {
     if (hour < 5.5) return 5;
     if (hour < 7) return 10;

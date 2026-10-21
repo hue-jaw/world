@@ -5,7 +5,7 @@
 // Équivalent UE5 : USaveGame sérialisé + migration par version.
 // ============================================================================
 const KEY = 'metropolis_save';
-const VERSION = 1;
+const VERSION = 2;   // v2 : économie, santé, logements
 
 export const SaveSystem = {
   load() {

@@ -20,7 +20,7 @@ npm install            # une seule fois (three + esbuild)
 npm start              # http://localhost:8000
 ```
 
-**Contenu jouable :** personnage 3e personne **modélisé et animé** · 7 types de véhicules **modélisés** (roues qui tournent et braquent) · trafic IA qui respecte feux et voies · 44 PNJ **modélisés** avec routines quotidiennes · cycle jour/nuit complet · météo dynamique (pluie, orage, brouillard) aux effets gameplay réels · police avec poursuites et arrestations · missions de livraison chronométrées · minimap/boussole · sauvegarde automatique · audio 100 % procédural.
+**Contenu jouable :** métropole **streamée de 8,2 km** (autoroute en anneau, avenues, circuit privé) · personnage 3e personne **modélisé et animé** · **8 véhicules** modélisés dont une **moto** · trafic IA qui respecte feux et voies · 44 PNJ **modélisés** avec routines quotidiennes · **cycle jour 20 min / nuit 20 min** · météo dynamique avec **reflets sur chaussée mouillée** · police, poursuites, arrestations · missions de livraison chronométrées · **GPS : flèches au sol + tracé sur la mini-carte** · **caméra automatique** · **manettes Xbox One / PS4 / PS5 / Switch Pro** · **économie** : logements (accès au toit), achat de véhicules, agrandissement du garage, améliorations moteur/pneus/freins · **santé** et blessures (chutes, accidents) · sauvegarde automatique · audio 100 % procédural.
 
 | Touche | Action |
 |---|---|
@@ -30,13 +30,37 @@ npm start              # http://localhost:8000
 | `Maj` · `Espace` | Sprint · saut / frein à main |
 | `H` · `L` · `M` | Klaxon · phares · son |
 | `T` · `G` · `F1` | +3 h · météo suivante · panneau debug |
+| `C` | Caméra automatique (suit la direction) / libre |
+| `B` · `Échap` | Boutique, garage, logements / fermer |
+| `E` | Monter au toit d'un immeuble acheté (et redescendre) |
+| 🎮 Manette | Stick gauche : se déplacer/conduire · droit : caméra · `X` entrer/sortir · `A` sauter/frein · `RB` sprint · `Y` klaxon |
 
 ## 🧪 Tests & build
 
 ```bash
-npm test        # 17 vérifs simulation + 103 vérifs modèles 3D
+npm test        # 19 (simulation) + 30 (fonctionnalités) + 15 (intégration) + 112 (assets 3D)
 npm run build   # régénère METROPOLIS.html (fichier unique, double-cliquable)
 ```
+
+## 🌍 Le monde (v0.3)
+
+| Élément | Détail |
+|---|---|
+| **Surface** | 8,19 km de côté (grille de 129 × 129 routes, maille de 64 m) |
+| **Streaming** | seuls les chunks proches (256 m) sont matérialisés ; le reste = données (0 coût de rendu) |
+| **Cœur détaillé** | 448 m : 138 bâtiments, parc, station-service, PNJ, missions, boutiques |
+| **Autoroute** | anneau de 4 km + 4 avenues radiales, glissières, lampadaires |
+| **Circuit privé** | anneau asphalté de 336 m avec glissières et arche de départ |
+| **Toits** | les immeubles possédés donnent accès à leur toit (vue sur la ville, chute possible) |
+
+## 💰 Économie et progression
+
+- **Argent** gagné par les missions de livraison (90 $ + 0,80 $/m + bonus de rapidité).
+- **Logements** (8 biens, de 5 000 $ à ~42 000 $) : point de réapparition, soins, accès au toit.
+- **Garage** : 2 → 4 → 6 emplacements (6 000 $ puis 15 000 $).
+- **Véhicules** achetables (moto, citadine, berline, taxi, SUV, utilitaire, sportive) livrés devant l'atelier.
+- **Améliorations** moteur / pneus / freins, 3 niveaux, appliquées à une copie de la fiche technique.
+- Tout est **sauvegardé** (format v2).
 
 ## 🎨 Modèles 3D (CC0, embarqués)
 

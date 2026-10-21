@@ -58,16 +58,16 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
         run: |
-          TAG="v0.2.0"
+          TAG="v0.3.0"
           NOTES="Executable Windows portable (x64), sans installation."
           NOTES="$NOTES Double-cliquez : le jeu demarre dans sa propre fenetre (F11 plein ecran)."
           NOTES="$NOTES Contenu : quartier vivant, trafic IA avec feux, PNJ a routines,"
-          NOTES="$NOTES 7 vehicules et 44 citoyens MODELISES en 3D (CC0), police et poursuites, missions,"
-          NOTES="$NOTES cycle jour/nuit, meteo a effets gameplay, sauvegarde automatique."
+          NOTES="$NOTES Metropole de 8 km streamée, autoroute, circuit privé, 8 vehicules et 44 citoyens 3D,"
+          NOTES="$NOTES camera auto, GPS fleches au sol, manettes Xbox/PS, economie (maisons, garage, upgrades),"
           NOTES="$NOTES 100% hors-ligne, aucune installation, aucun droit administrateur."
           if ! gh release view "$TAG" --repo "$REPO" > /dev/null 2>&1; then
             gh release create "$TAG" --repo "$REPO" \
-              --title "METROPOLIS v0.2.0 - vertical slice jouable (modeles 3D)" \
+              --title "METROPOLIS v0.3.0 - metropole 8 km, economie et manettes" \
               --notes "$NOTES"
           fi
           gh release upload "$TAG" desktop/release/*.exe --repo "$REPO" --clobber

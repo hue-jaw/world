@@ -55,7 +55,20 @@ const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(62, 1.6, 0.1, 2000);
 const city = new City(scene);
 check(`ville générée : ${city.buildings.length} bâtiments`, () => assert(city.buildings.length > 60));
-check(`graphe routier 8x8`, () => assert.equal(city.nodes.length, 8));
+check(`graphe routier métropole ${city.nodes.length - 1}x${city.nodes.length - 1}`, () => {
+  assert.equal(city.nodes.length, 129);
+  // la grille doit couvrir > 8 km et contenir le cœur aux mêmes coordonnées
+  assert(city.nodes[0][0].x < -4000 && city.nodes[128][0].x > 4000);
+  const coreNode = city.nearestNode(0, 0);
+  assert(Math.abs(coreNode.x) < 64 && Math.abs(coreNode.z) < 64);
+});
+check('streaming : chunks matérialisés autour du joueur', () => {
+  assert(city.chunks.size >= 9, `seulement ${city.chunks.size} chunks`);
+});
+check('métropole : collision valide loin du cœur', () => {
+  const far = city.collide(3000, 3000, 0.4);
+  assert(Number.isFinite(far.x) && Number.isFinite(far.z));
+});
 check(`graphe piéton : ${city.pedNodes.length} nœuds`, () => assert(city.pedNodes.length > 120));
 check('BFS piéton traverse la ville', () => {
   const p = city.pedPath(city.pedNodes[0], city.pedNodes[city.pedNodes.length - 1]);
@@ -165,9 +178,13 @@ check('cycle jour/nuit : nuit profonde à 0h, jour à 12h', () => {
 
 console.log('— Sauvegarde —');
 check('roundtrip sauvegarde versionnée', () => {
-  SaveSystem.save({ money: 432, deliveries: 3, hour: 15.5, weather: 'Fog', x: 10, z: -20 });
+  SaveSystem.save({ deliveries: 3, hour: 15.5, weather: 'Fog', x: 10, z: -20,
+    economy: { money: 432, garageLevel: 1, ownedCars: [{ id: 1, type: 'Moto', upgrades: { moteur: 2 } }],
+      ownedHouses: [], primaryHouse: null, upgrades: { moteur: 1, pneus: 0, freins: 0 } } });
   const d = SaveSystem.load();
-  assert.equal(d.money, 432); assert.equal(d.v, 1);
+  assert.equal(d.economy.money, 432);
+  assert.equal(d.economy.ownedCars[0].type, 'Moto');
+  assert.equal(d.v, 2);
   SaveSystem.clear();
   assert.equal(SaveSystem.load(), null);
 });
