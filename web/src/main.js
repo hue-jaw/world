@@ -199,7 +199,7 @@ function loop() {
     debugT -= dt;
     if (debugT <= 0 && ui.debugVisible) {
       debugT = 0.25;
-      const ts = traffic.stats(), ps = peds.stats(), pp = ctx.playerPos();
+      const ts = traffic.stats(), ps = peds.stats(), pp = ctx.playerPos(), as = Assets.stats();
       const pv = ctx.playerVehicle;
       ui.setDebug(
         `METROPOLIS DEBUG (F1)\n` +
@@ -208,6 +208,7 @@ function loop() {
         `Gameplay : grip ×${env.gripFactor.toFixed(2)} · trafic ×${env.trafficFactor.toFixed(2)}\n` +
         `Trafic : ${ts.total} véhicules (${ts.ai} IA, ${ts.police} police) · cible ${traffic.trafficTarget(env.hour)}\n` +
         `PNJ : ${ps.visible}/${ps.total} visibles (${ps.walking} en marche)\n` +
+        `Assets 3D : ${as.vehicles} véhicules, ${as.citizens} citoyens${as.ready ? '' : ' (repli primitives)'}\n` +
         `Wanted : ${ts.wanted}★ (heat ${traffic.heat.toFixed(2)})\n` +
         `Joueur : (${pp.x.toFixed(0)}, ${pp.z.toFixed(0)}) ${pv ? `· ${pv.typeName} ${Math.round(pv.speedKmh())} km/h · dégâts ${Math.round(pv.damage * 100)}%` : '· à pied'}\n` +
         `LOD sim : <70m plein · <170m /4 · au-delà /24`);

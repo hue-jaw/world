@@ -198,7 +198,7 @@ class Citizen {
       }
     }
     // LOD de rendu : au-delà de 180 m, plus de dessin (mais la simulation continue)
-    this.group.visible = this.visible && dp < 180;
+    this.group.visible = this.visible && dp < 130;
   }
   paceFactor() { return this._pace ??= randRange(0.85, 1.2); }
   arrive(ctx) {
