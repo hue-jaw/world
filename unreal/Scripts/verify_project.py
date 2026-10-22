@@ -81,6 +81,18 @@ def check_uproject() -> None:
     add_check("uproject", "MassEntity" not in names,
               "uproject : MassEntity est un module moteur en 5.8, pas un plugin")
 
+    # MassAI/MassCrowd n'ont pas pu être confirmés dans l'inventaire 5.8.4 :
+    # tant qu'aucun code Mass n'existe, aucune entrée Mass* ne doit subsister.
+    add_check("uproject", not any(n.startswith("Mass") for n in names),
+              "uproject : aucun plugin Mass* déclaré (évite un second échec de chargement)")
+
+    # Modules optionnels réellement utilisés par le code livré.
+    for optional, why in (("ProceduralMeshComponent", "voirie procédurale"),
+                          ("Niagara", "météo"),
+                          ("PythonScriptPlugin", "scripts Poly Haven")):
+        add_check("uproject", optional in names,
+                  f"uproject : {optional} déclaré ({why})")
+
     # Enhanced Input et Chaos Vehicles doivent rester actifs (exigence projet).
     for required in ("EnhancedInput", "ChaosVehiclesPlugin"):
         enabled = any(p.get("Name") == required and p.get("Enabled") is True for p in plugins)

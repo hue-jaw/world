@@ -12,7 +12,7 @@ dossier (deux `.uproject`, deux modules, deux `Config/`).
 | `IInteractable` (interface d'interaction) | conservé, implémenté par `AMetropolisVehicle` |
 | `UVehicleDataAsset` (fiche véhicule data-driven) | conservé, référencé par `AMetropolisVehicle` |
 | `FCitizenIdentity` / `ECitizenActivity` (types citoyens) | conservés pour l'extension Mass Entity |
-| Intention UE 5.5 + MassEntity/ZoneGraph | reprise puis corrigée pour 5.8 : `EngineAssociation 5.8`, `MassEntity` retiré (module moteur), MassGameplay/ZoneGraph déclarés (désactivés tant que non utilisés) |
+| Intention UE 5.5 + MassEntity/ZoneGraph | reprise puis corrigée pour 5.8 : `EngineAssociation 5.8`, `MassEntity` retiré (module moteur en 5.8) ; `MassGameplay`/`ZoneGraph`/`MassAI`/`MassCrowd` retirés du `.uproject` tant qu'aucun code Mass n'existe (voir `08_RAPPORT_UE58.md`) |
 
 ## Remplacé (fonctionnalité reprise en plus complet)
 

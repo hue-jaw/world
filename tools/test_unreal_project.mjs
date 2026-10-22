@@ -57,8 +57,10 @@ check('.uproject : Chaos Vehicles activé',
   (uproject.Plugins || []).some((p) => p.Name === 'ChaosVehiclesPlugin' && p.Enabled === true));
 check('.uproject : MassEntity absent des plugins (module moteur en 5.8)',
   !(uproject.Plugins || []).some((p) => p.Name === 'MassEntity'));
-check('.uproject : MassGameplay/ZoneGraph déclarés (plugins 5.8)',
-  ['MassGameplay', 'ZoneGraph'].every((n) => (uproject.Plugins || []).some((p) => p.Name === n)));
+check('.uproject : aucun plugin Mass* déclaré sans code Mass (évite un 2e « Unable to find plugin »)',
+  !(uproject.Plugins || []).some((p) => /^Mass/.test(p.Name)));
+check('.uproject : ZoneGraph/Chaos/Enhanced Input cohérents',
+  ['EnhancedInput', 'ChaosVehiclesPlugin'].every((n) => (uproject.Plugins || []).some((p) => p.Name === n && p.Enabled !== false)));
 check('.uproject : Enhanced Input activé',
   (uproject.Plugins || []).some((p) => p.Name === 'EnhancedInput' && p.Enabled === true));
 

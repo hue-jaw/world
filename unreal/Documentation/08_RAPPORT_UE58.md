@@ -56,6 +56,31 @@ trafic **ne sont pas supprimées** : elles vivent dans `APedestrian` et
 contient déjà le bloc de dépendances à décommenter (`MassEntity`, `MassCore`,
 `MassCommon`, `MassSpawner`, `MassRepresentation`).
 
+### Pourquoi MassGameplay, ZoneGraph, MassAI et MassCrowd sont retirés du `.uproject`
+
+Aucune des 18 classes du projet n'utilise Mass : les PNJ (`APedestrian`) et le
+trafic (`ATrafficAIController`) sont des `AActor`/`AAIController` natifs, écrits
+pour ce projet. Les quatre entrées étaient donc des déclarations mortes — et
+une déclaration morte suffit à bloquer l'ouverture, comme le prouve l'erreur
+`MassEntity`.
+
+Elles sont retirées pour une raison de robustesse : `MassAI` et `MassCrowd`
+n'ont **pas** pu être confirmés comme présents dans l'inventaire des plugins
+5.8.4, et un nom de plugin disparu produit exactement le même échec. Quand la
+foule Mass sera branchée, il faudra :
+
+1. déclarer `{ "Name": "MassGameplay", "Enabled": true }` et
+   `{ "Name": "ZoneGraph", "Enabled": true }` (seuls plugins vérifiés en 5.8) ;
+2. ajouter dans `Metropolis.Build.cs` : `MassEntity` (module moteur),
+   `MassCore` (nouveaux types de base 5.8), `MassCommon`, `MassSpawner`,
+   `MassRepresentation` ;
+3. vérifier la présence de `MassAI`/`MassCrowd` dans
+   `C:\Program Files\Epic Games\UE_5.8\Engine\Plugins\AI\` avant de les
+   déclarer.
+
+Les fonctionnalités foule, PNJ et trafic **ne sont pas supprimées** : elles
+restent dans le code, et le quartier généré les fait circuler.
+
 ## 2. Erreur n°2 — MSVC 14.51 « plus récent que la version préférée »
 
 C'est un **avertissement**, pas l'erreur bloquante : UE 5.8.4 préfère le

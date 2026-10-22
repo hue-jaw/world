@@ -42,7 +42,7 @@ npm start              # http://localhost:8000
 
 ```bash
 npm test        # 398 vérifications : smoke, fonctionnalités, intégration, v0.4→v0.9,
-                # assets 3D, rendu, bundle livrable, projet Unreal 5.8.4 (57)
+                # assets 3D, rendu, bundle livrable, projet Unreal 5.8.4 (58)
 npm run build   # régénère METROPOLIS.html (fichier unique, double-cliquable)
 ```
 
@@ -207,7 +207,7 @@ Les personnages, véhicules et l'avatar du joueur sont de **vrais modèles 3D** 
 
 ```bash
 python3 unreal/Scripts/verify_project.py    # 269 contrôles statiques, 0 échec
-node tools/test_unreal_project.mjs          # 57 contrôles d'intégration, 0 échec
+node tools/test_unreal_project.mjs          # 58 contrôles d'intégration, 0 échec
 ```
 
 Guide : [`unreal/README.md`](unreal/README.md) · rapport de chantier : [`docs/13_V3_UNREAL.md`](docs/13_V3_UNREAL.md).
