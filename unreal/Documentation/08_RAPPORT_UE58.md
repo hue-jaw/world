@@ -189,9 +189,11 @@ Classés par probabilité décroissante :
 1. **Compilation effective** : aucun compilateur C++ UE n'a tourné ici. Les
    erreurs résiduelles possibles sont des signatures d'API moteur (Chaos,
    Niagara, HUD) — voir §8 pour la marche à suivre si UBT en signale.
-2. **`MassGameplay` réactivé** : si vous l'activez, ses dépendances
-   (PoseSearch, StateTree, SmartObjects) doivent être présentes — elles le sont
-   dans une installation Launcher standard.
+2. **Foule Mass** : si vous rebranchez `MassGameplay` (procédure ci-dessus),
+   ses dépendances (PoseSearch, StateTree, SmartObjects) doivent être présentes
+   — elles le sont dans une installation Launcher standard. Avant d'ajouter
+   `MassAI`/`MassCrowd`, vérifiez leur fichier `.uplugin` dans
+   `Engine\Plugins\AI\` : leur présence en 5.8.4 n'a pas pu être confirmée ici.
 3. **DLSS** : non installé par défaut, `METROPOLIS_WITH_DLSS=0`. TSR prend le
    relais (`03_DLSS.md`).
 4. **Performances** : aucun FPS mesuré. La cible 3050 6 Go est un budget, pas
