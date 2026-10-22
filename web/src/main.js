@@ -342,7 +342,14 @@ document.getElementById('btn-play').addEventListener('click', () => {
   // snap caméra derrière le joueur (pas de travelling parasite depuis le titre)
   const p = player.pos;
   player._camPos.set(p.x + Math.sin(player.camYaw) * 7, 3.4, p.z + Math.cos(player.camYaw) * 7);
-  Bus.emit('toast', { text: save ? '👋 Bon retour à Metropolis !' : '👋 Bienvenue à Metropolis ! Une sportive vous attend juste à côté (F pour entrer).', kind: 'good' });
+  // Le message doit dire la VÉRITÉ du mode : en Histoire on arrive sans rien,
+  // et il n'y a aucun véhicule offert (l'ancien texte promettait une sportive
+  // qui n'existait pas). En Libre, on garde l'invitation à la promenade.
+  const msg = save ? '👋 Bon retour à Metropolis !'
+    : settings.get('mode') === 'free'
+      ? '👋 Bienvenue à Metropolis ! Prenez un véhicule dans la rue (F) : ils sont tous empruntables.'
+      : '🪧 Bienvenue à Metropolis. 35 $ en poche, pas de toit. Petites annonces : J.';
+  Bus.emit('toast', { text: msg, kind: 'good' });
 });
 
 // caméra cinématique de l'écran titre (survol de la ville vivante)
