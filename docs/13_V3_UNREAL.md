@@ -23,7 +23,7 @@ l'éditeur, sur un poste Windows.
 
 ## 3. Ce qui a été livré
 
-### Code C++ (21 classes, `unreal/Source/METROPOLIS/`)
+### Code C++ (18 classes exportées — 17 `UCLASS` + 1 interface — dans `unreal/Source/METROPOLIS/`)
 
 | Domaine | Classes | Points vérifiables dans le code |
 |---|---|---|

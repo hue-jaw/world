@@ -13,7 +13,7 @@ node ../tools/test_unreal_project.mjs # 51 contrôles d'intégration, 0 échec
 | Élément | Détail |
 |---|---|
 | `METROPOLIS.uproject` | UE 5.5, module `METROPOLIS`, plugins Chaos/Enhanced Input/Niagara/Python |
-| `Source/METROPOLIS/` | 21 classes C++ (voir tableau ci-dessous) |
+| `Source/METROPOLIS/` | 18 classes C++ (17 UCLASS + 1 interface), tableau ci-dessous |
 | `Config/` | `DefaultEngine.ini` (Lumen, Nanite, VSM, VRAM 6 Go), `DefaultGame.ini`, `DefaultInput.ini` |
 | `Scripts/` | client Poly Haven, synchronisation, import éditeur, **vérificateur** |
 | `Documentation/` | 8 documents : installation, étapes éditeur, DLSS, perf, Poly Haven, tests, migration |

@@ -203,7 +203,7 @@ Les personnages, véhicules et l'avatar du joueur sont de **vrais modèles 3D** 
 
 ## 🏗️ Produit cible : Unreal Engine 5.5
 
-`unreal/` contient désormais **le projet UE5.5 source complet de la migration V3** : 21 classes C++, graphe routier et GPS (A*), météo avec mouillage/séchage, profils graphiques + DLSS/TSR, véhicule Chaos, voirie physique (trottoirs chanfreinés franchissables), trafic IA, PNJ météo, missions, sauvegarde v3, pipeline Poly Haven et vérificateur exécutable.
+`unreal/` contient désormais **le projet UE5.5 source complet de la migration V3** : 18 classes C++ (17 UCLASS + 1 interface), graphe routier et GPS (A*), météo avec mouillage/séchage, profils graphiques + DLSS/TSR, véhicule Chaos, voirie physique (trottoirs chanfreinés franchissables), trafic IA, PNJ météo, missions, sauvegarde v3, pipeline Poly Haven et vérificateur exécutable.
 
 ```bash
 python3 unreal/Scripts/verify_project.py    # 251 contrôles statiques, 0 échec
