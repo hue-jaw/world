@@ -9,6 +9,7 @@ import * as THREE from 'three';
 import { CFG, Bus, clamp, damp, angleDamp, pick, rand, randRange, randInt, chance } from './core.js';
 import Assets from './assets.js';
 import { STEP_UP } from './city.js';
+import { contactShadow } from './contact.js';
 
 const FIRST = ['Léa', 'Hugo', 'Emma', 'Louis', 'Jade', 'Noah', 'Chloé', 'Lucas', 'Mia', 'Adam', 'Sarah', 'Karim', 'Inès', 'Théo', 'Awa', 'Kenji', 'Maria', 'Ivan', 'Zoé', 'Mehdi'];
 const LAST = ['Martin', 'Bernard', 'Dubois', 'Moreau', 'Laurent', 'Diallo', 'Garcia', 'Rossi', 'Kowalski', 'Tanaka', 'Haddad', 'Petit', 'Leroy', 'Fontaine'];
@@ -20,6 +21,9 @@ const PANTS = [0x2c3e50, 0x1a1a2e, 0x5d4037, 0x616a6b, 0x283747, 0x4d5656];
 
 function buildPedMesh(variant = 0) {
   const g = new THREE.Group();
+  // tache de contact : ancre le PNJ au sol (0,55 m, dégradé partagé)
+  const blob = contactShadow(0.62, 0.62);
+  if (blob) g.add(blob);
   const prim = new THREE.Group(); g.add(prim);   // corps procédural (secours)
   const skin = new THREE.MeshStandardMaterial({ color: pick(SKIN), roughness: 0.8 });
   const cloth = new THREE.MeshStandardMaterial({ color: pick(CLOTH), roughness: 0.9 });
@@ -63,7 +67,7 @@ function buildPedMesh(variant = 0) {
     g.add(rig.group);
     umbrella.position.y = rig.height * 0.94;
   }
-  return { group: g, prim, rig, legL, legR, armL, armR, umbrella };
+  return { group: g, prim, rig, legL, legR, armL, armR, umbrella, blob };
 }
 
 class Citizen {
@@ -207,11 +211,15 @@ class Citizen {
         // modèle squeletté : cycle de marche/course calculé sur les os
         const bob = Assets.walkRig(this.rig, this.speed, dt, this.walkPhase);
         this.group.position.y = this.pos.y + bob;
+        // l'ombre de contact reste COLLÉE au sol : on compense le rebond
+        if (this.blob) this.blob.position.y = 0.035 - bob;
       } else {
         const sw = Math.sin(this.walkPhase) * clamp(this.speed * 0.32, 0, 0.75);
         this.legL.rotation.x = sw; this.legR.rotation.x = -sw;
         this.armL.rotation.x = -sw * 0.8; this.armR.rotation.x = sw * 0.8;
-        this.group.position.y = this.pos.y + Math.abs(Math.sin(this.walkPhase)) * 0.035 * clamp(this.speed, 0, 1.6);
+        const hop = Math.abs(Math.sin(this.walkPhase)) * 0.035 * clamp(this.speed, 0, 1.6);
+        this.group.position.y = this.pos.y + hop;
+        if (this.blob) this.blob.position.y = 0.035 - hop;
       }
     }
     // LOD de rendu : au-delà de 180 m, plus de dessin (mais la simulation continue)

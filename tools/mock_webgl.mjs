@@ -40,7 +40,15 @@ export function makeGL(width = 1280, height = 720) {
   };
   const base = {
     getContextAttributes: () => ({ alpha: true, antialias: true, depth: true, stencil: false, premultipliedAlpha: true, preserveDrawingBuffer: false, powerPreference: 'default' }),
-    getExtension: (n) => (n === 'WEBGL_debug_renderer_info' ? { UNMASKED_RENDERER_WEBGL: 1, UNMASKED_VENDOR_WEBGL: 2 } : {}),
+    // Allowlist explicite : renvoyer {} à TOUTE extension faisait croire à
+    // three.js que WEBGL_multisampled_render_to_texture existait, et il
+    // appelait framebufferTexture2DMultisampleEXT (absent du mock) dès qu'un
+    // render target MSAA (post-traitement) était créé. En navigateur, une
+    // extension non supportée renvoie null — le mock doit faire pareil.
+    getExtension: (n) => (n === 'WEBGL_debug_renderer_info'
+      ? { UNMASKED_RENDERER_WEBGL: 1, UNMASKED_VENDOR_WEBGL: 2 }
+      : (n === 'EXT_color_buffer_float' || n === 'OES_texture_float_linear'
+        || n === 'EXT_texture_filter_anisotropic') ? {} : null),
     getSupportedExtensions: () => ['EXT_color_buffer_float', 'OES_texture_float_linear'],
     getParameter: (p) => {
       const nm = rev.get(p);
@@ -105,6 +113,8 @@ export function makeGL(width = 1280, height = 720) {
     createTexture: () => obj('tex'),
     createFramebuffer: () => obj('fbo'),
     createRenderbuffer: () => obj('rbo'),
+    renderbufferStorageMultisample: () => undefined,
+    blitFramebuffer: () => undefined,
     createVertexArray: () => obj('vao'),
     createQuery: () => obj('query'),
     createSampler: () => obj('sampler'),

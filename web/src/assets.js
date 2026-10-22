@@ -376,6 +376,31 @@ function prepareCitizen(gltf, name, targetHeight) {
 }
 
 // --------------------------------- API --------------------------------------
+/**
+ * Teinte de foule déterministe (v0.9).
+ *
+ * Les modèles CC0 partagent une palette unique : sans retouche, les 44 PNJ
+ * sont des clones exacts — le défaut le plus visible d'une foule. Cette
+ * fonction pure renvoie, pour un numéro de séquence, une teinte proche du
+ * blanc (décalage chromatique doux) et une échelle de ±5 %.
+ *
+ * Exportée pour être testable sans GPU ni GLB.
+ *
+ * @param {number} seq numéro de citoyen (entier ≥ 1)
+ * @returns {{color:[number,number,number], scale:number, hue:number}}
+ */
+export function citizenTint(seq) {
+  const h = (n) => ((Math.sin(seq * 12.9898 + n * 78.233) * 43758.5453) % 1 + 1) % 1;
+  const hue = h(1);
+  const t = new THREE.Color(1, 1, 1).lerp(new THREE.Color().setHSL(hue, 0.55, 0.5), 0.10 + h(2) * 0.08);
+  const bright = 0.94 + h(4) * 0.12;
+  return {
+    color: [t.r * bright, t.g * bright, t.b * bright],
+    scale: 0.95 + h(6) * 0.10,
+    hue,
+  };
+}
+
 export const Assets = {
   ready: false,
   error: null,
@@ -557,7 +582,33 @@ export const Assets = {
   _cloneCitizen(proto, variant) {
     if (!proto) return null;
     const scene = cloneSkinned(proto.src);
-    scene.scale.setScalar(proto.scale);
+    // ------------------------------------------------------------------------
+    // VARIÉTÉ DE FOULE (v0.9)
+    // Les modèles CC0 partagent une palette unique : sans retouche, les 44 PNJ
+    // sont des clones exacts — le défaut le plus visible d'une foule. On teinte
+    // donc chaque copie (matériaux clonés, jamais partagés) d'un écart de
+    // teinte/luminosité de quelques pourcents et d'une échelle de ±5 %.
+    // Assez pour casser la répétition, assez peu pour rester crédible.
+    // ------------------------------------------------------------------------
+    const seq = (this._citizenSeq = (this._citizenSeq || 0) + 1);
+    const tv = citizenTint(seq);
+    const tint = new THREE.Color(tv.color[0], tv.color[1], tv.color[2]);
+    scene.traverse((o) => {
+      if (!o.isMesh && !o.isSkinnedMesh) return;
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      o.material = Array.isArray(o.material) ? mats.map(tintMat) : tintMat(mats[0]);
+      function tintMat(m) {
+        if (!m) return m;
+        const c = m.clone();
+        // la palette est blanche + couleurs de sommets : multiplier la couleur
+        // décale l'ensemble (vêtements ET peau) de façon cohérente.
+        const base = c.color ? c.color.clone() : new THREE.Color(1, 1, 1);
+        c.color = base.multiply(tint);
+        if (c.roughness !== undefined) c.roughness = Math.min(1, (c.roughness ?? 0.8) + 0.05);
+        return c;
+      }
+    });
+    scene.scale.setScalar(proto.scale * tv.scale);
     scene.traverse((o) => {
       if (o.isMesh || o.isSkinnedMesh) { o.castShadow = true; }
       // ------------------------------------------------------------------

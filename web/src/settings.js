@@ -30,6 +30,8 @@ export const SHADOW_LEVELS = {
   ultra:  { label: 'Ultra',       mapSize: 2048, type: 'PCFSoftShadowMap', radius: 4, bias: -0.0004 },
 };
 
+import { POSTFX_LEVELS } from './postfx.js';
+
 export const LIGHT_LEVELS = {
   low:    { label: 'Basse',   hemi: 0.55, sun: 2.0, exposure: 1.00, envInt: 0.55 },
   medium: { label: 'Moyenne', hemi: 0.70, sun: 2.2, exposure: 1.03, envInt: 0.80 },
@@ -42,6 +44,9 @@ const DEFAULTS = {
   mode: 'story',          // 'story' | 'free'
   shadows: 'ultra',      // v0.8 : 2048 px + PCFSoft, portée 120 m
   lights: 'high',
+  // v0.9 : GTAO + bloom + étalonnage. 'high' = bon compromis ; 'off' = rendu
+  // direct comme avant (sur machine faible, l'adaptatif ne suffit pas).
+  postfx: 'high',
   rtx: false,
   cinema: true,          // étalonnage + vignette (filtre CSS, coût nul)
   traffic: 1,             // multiplicateur de densité (0.5 → 1.6)
@@ -146,6 +151,11 @@ export class Settings {
         const sc = s.shadow.camera;
         if (sc.right !== reach) { sc.left = -reach; sc.right = reach; sc.top = reach; sc.bottom = -reach; sc.updateProjectionMatrix(); }
       }
+      // -- post-traitement (GTAO + bloom + ACES via OutputPass)
+      // C'est ce qui donne les micro-ombres de contact et les halos de phares :
+      // la différence la plus visible à l'œil entre « propre » et « cinéma ».
+      this._applyPostFX(ctx);
+
       // -- lumière : intensités + exposition
       if (env?.hemi) env.hemi.intensity = li.hemi;
       if (env?.sun && !env._sunBase) env._sunBase = env.sun.intensity;
@@ -183,6 +193,25 @@ export class Settings {
   }
 
   /** Applique météo + bonus de densité (appelé au démarrage et au changement). */
+  /**
+   * Applique le palier de post-traitement. Séparé pour être testable et pour
+   * que `apply()` ne devienne pas un monolithe.
+   */
+  _applyPostFX(ctx) {
+    const fx = ctx.postfx;
+    if (!fx) return false;
+    const wanted = POSTFX_LEVELS[this.state.postfx] ? this.state.postfx : 'high';
+    if (fx.level !== wanted || (!fx.active && wanted !== 'off' && !fx.failed)) {
+      fx.setLevel(wanted);
+      if (wanted !== 'off' && !fx.active) {
+        // le GPU a refusé (contexte, extension) : on le dit au joueur, pas
+        // seulement à la console — et on garde le rendu direct.
+        Bus.emit('toast', { text: '⚠ Post-traitement indisponible sur ce GPU — rendu direct.', kind: 'bad' });
+      }
+    }
+    return fx.active;
+  }
+
   applyWorld(ctx) {
     const { env, traffic, peds } = ctx;
     if (env) {

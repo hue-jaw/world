@@ -23,6 +23,7 @@ import { Settings } from './settings.js';
 import MenuSystem from './menu.js';
 import StorySystem from './story.js';
 import JobSystem from './jobs.js';
+import PostFX from './postfx.js';
 
 window.addEventListener('error', (e) => {
   const el = document.getElementById('loading');
@@ -59,10 +60,16 @@ const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.1, 2400);
 camera.position.set(0, 60, 180);
 
+// ------------------------------- Post-traitement ---------------------------
+// Créé tôt (il ne dépend que du renderer/scene/camera) pour que le palier
+// « off » ne coûte strictement rien : on ne paie que ce qui est activé.
+const postfx = new PostFX({ renderer, scene, camera, level: 'off' });
+
 addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
+  postfx.setPixelRatio(renderer.getPixelRatio());
 });
 
 // ------------------------------- Sauvegarde --------------------------------
@@ -103,7 +110,7 @@ const jobs = new JobSystem(city, economy);
 
 const ctx = {
   // renderer exposé : les réglages graphiques (ombres, exposition) en ont besoin
-  scene, city, env, traffic, peds, player, missions, audio, economy, gps, renderer, story, jobs,
+  scene, city, env, traffic, peds, player, missions, audio, economy, gps, renderer, story, jobs, postfx,
   ui: null,
   menu: null,
   paused: false,
@@ -375,9 +382,11 @@ function loop() {
     if (fpsAvg < 48 && renderScale > 0.75) {
       renderScale = Math.max(0.75, renderScale - 0.15);
       renderer.setPixelRatio(renderScale);
+      postfx.setPixelRatio(renderScale);
     } else if (fpsAvg > 58 && renderScale < MAX_DPR) {
       renderScale = Math.min(MAX_DPR, renderScale + 0.1);
       renderer.setPixelRatio(renderScale);
+      postfx.setPixelRatio(renderScale);
     }
   }
 
@@ -428,14 +437,17 @@ function loop() {
           + `${gps._proj ? ` · écart ${gps._proj.dist.toFixed(0)} m` : ''}`
           + `${gps.remaining ? ` · reste ${(gps.remaining / 1000).toFixed(2)} km` : ''}\n` +
         `Économie : $${Math.round(economy.money)} · ${economy.ownedCars.length}/${economy.garageSlots} véhicules · ${economy.ownedHouses.length} logement(s)\n` +
-        `LOD sim : <70m plein · <170m /4 · au-delà /24`);
+        `LOD sim : <70m plein · <170m /4 · au-delà /24\n` +
+        `Post-traitement : ${postfx.active ? `${postfx.level.toUpperCase()} (GTAO ${postfx.gtao ? 'on' : 'off'} · bloom ${postfx.bloom ? 'on' : 'off'})` : 'désactivé'}${postfx.failed ? ' — repli : ' + postfx.failed : ''}`);
     }
     if (ctx.gps) ctx.gps.hintT = (ctx.gps.hintT || 0) + dt;
   } else if (!started) {
     titleCamera(t);
   }
 
-  renderer.render(scene, camera);
+  // Post-traitement si actif ET si le rendu a réussi ; sinon rendu direct.
+  // Une seule image ratée ne doit jamais laisser un écran noir.
+  if (!postfx.render(dt)) renderer.render(scene, camera);
   if (firstFrame) {
     firstFrame = false;
     document.getElementById('loading').style.display = 'none';

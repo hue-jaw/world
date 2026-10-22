@@ -9,6 +9,7 @@ import Assets from './assets.js';
 import GamepadInput from './input.js';
 import { ECONOMY } from './core.js';
 import { STEP_UP } from './city.js';
+import { contactShadow } from './contact.js';
 import { Bus, clamp, damp, angleDamp } from './core.js';
 
 // Coin de trottoir a l'intersection (32,32) : garanti sans batiment.
@@ -45,7 +46,10 @@ function buildPlayerMesh() {
   // avatar 3D réel (riggé) si disponible
   const rig = Assets.makePlayer();
   if (rig) { prim.visible = false; g.add(rig.group); }
-  return { group: g, prim, rig, legL, legR, armL, armR };
+  // ombre de contact : le joueur aussi doit « poser » au sol
+  const blob = contactShadow(0.8, 0.8);
+  if (blob) g.add(blob);
+  return { group: g, prim, rig, legL, legR, armL, armR, blob };
 }
 
 export class Player {
@@ -290,6 +294,7 @@ export class Player {
     if (this.rig) {
       const bob = Assets.walkRig(this.rig, this.grounded ? sp : 0, dt, this.walkPhase);
       this.group.position.y = this.pos.y + bob;
+      if (this.blob) this.blob.position.y = 0.035 - bob;
     } else {
       const sw = this.grounded ? Math.sin(this.walkPhase) * clamp(sp * 0.14, 0, 0.8) : 0.35;
       this.legL.rotation.x = sw; this.legR.rotation.x = -sw;

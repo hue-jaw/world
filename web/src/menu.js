@@ -12,6 +12,7 @@
 import { Bus } from './core.js';
 import { icon } from './icons.js';
 import { SHADOW_LEVELS, LIGHT_LEVELS } from './settings.js';
+import { POSTFX_LEVELS } from './postfx.js';
 
 const WEATHERS = [
   { key: 'Clear', label: 'Dégagé', icon: 'sun' },
@@ -138,6 +139,7 @@ export class MenuSystem {
         break;
       case 'shadows': S.set('shadows', value); S.apply(ctx); break;
       case 'lights': S.set('lights', value); S.apply(ctx); break;
+      case 'postfx': S.set('postfx', value); S.apply(ctx); break;
       case 'rtx': S.set('rtx', value === 'on'); S.apply(ctx); break;
       case 'cinema': S.set('cinema', value === 'on'); S.apply(ctx); break;
       case 'traffic': S.set('traffic', Number(value)); S.applyWorld(ctx); break;
@@ -249,6 +251,12 @@ export class MenuSystem {
           ${seg('lights', Object.entries(LIGHT_LEVELS).map(([k, v]) => ({ v: k, t: v.label })), s.lights)}
         </div>
         <div class="pm-hint">Intensité du soleil et du ciel, exposition de la caméra et force des reflets d'environnement.</div>
+
+        <div class="pm-section">${icon('sparkles', { size: 15 })} Post-traitement
+          ${seg('postfx', Object.entries(POSTFX_LEVELS).map(([k, v]) => ({ v: k, t: v.label })), s.postfx)}
+        </div>
+        <div class="pm-hint"><b>GTAO + Bloom + ACES.</b> Le GTAO ajoute les micro-ombres de contact (sous les voitures,
+        dans les angles des façades), le bloom fait rayonner phares et enseignes la nuit. « Désactivé » revient au rendu direct.</div>
 
         <div class="pm-section">${icon('sparkles', { size: 15 })} Mode RTX
           ${seg('rtx', [{ v: 'off', t: 'Désactivé' }, { v: 'on', t: 'Activé' }], s.rtx ? 'on' : 'off')}

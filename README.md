@@ -7,7 +7,7 @@ Un jeu open-world 3D en construction : une métropole fictive où le trafic, les
 ### Option 1 — double-clic, zéro installation *(le plus simple)*
 Téléchargez **`METROPOLIS.html`** et **double-cliquez dessus**. Le jeu complet s'ouvre dans votre navigateur, hors-ligne, sans serveur. `F11` = plein écran. La sauvegarde est automatique.
 
-> Ce fichier regroupe le jeu, les styles et Three.js en un seul document (4,2 Mo — modèles 3D et textures embarqués). Pour le régénérer : `npm run build` à la racine.
+> Ce fichier regroupe le jeu, les styles et Three.js en un seul document (4,3 Mo — modèles 3D et textures embarqués). Pour le régénérer : `npm run build` à la racine.
 
 ### Option 2 — exécutable Windows `.exe`
 **[⬇ Télécharger METROPOLIS.exe](https://github.com/hue-jaw/world/releases/latest)** — portable, sans installation, sans droits administrateur, 100 % hors-ligne. Construit automatiquement par GitHub Actions à chaque mise à jour.
@@ -31,7 +31,7 @@ npm start              # http://localhost:8000
 | `H` · `L` · `M` | Klaxon · phares · son |
 | `T` · `G` · `F1` | +3 h · météo suivante · panneau debug |
 | `C` | Caméra automatique (suit la direction) / libre |
-| `B` · `J` | Boutique, garage, logements · **emploi / petites annonces** |
+| `B` · `J` | Boutique, garage, logements · emploi / petites annonces |
 | `Échap` | Fermer un panneau · passer une cinématique |
 | `E` | Monter au toit d'un immeuble acheté (et redescendre) |
 | `V` · `R` | Vue habitacle ↔ 3e personne · recentrer la caméra |
@@ -41,7 +41,7 @@ npm start              # http://localhost:8000
 ## 🧪 Tests & build
 
 ```bash
-npm test        # 315 vérifications : smoke, fonctionnalités, intégration, v0.4→v0.8,
+npm test        # 340 vérifications : smoke, fonctionnalités, intégration, v0.4→v0.9,
                 # assets 3D, rendu, bundle livrable
 npm run build   # régénère METROPOLIS.html (fichier unique, double-cliquable)
 ```
@@ -54,9 +54,25 @@ npm run build   # régénère METROPOLIS.html (fichier unique, double-cliquable)
 | `test_v04` / `test_v05` | 25 / 20 | poursuite, drift, ville variable, ponts |
 | `test_v06` | 20 | façades, arbres, saut, L3, moto |
 | `test_v07` | 19 | GPS temps réel : recalcul, flèches, manœuvres |
-| `test_v08` | 32 | **franchissement, histoire, emploi, cinématique, carrosserie** |
+| `test_v08` | 32 | franchissement, histoire, emploi, cinématique, carrosserie |
+| `test_v09` | 25 | **post-traitement, ciel, mobilier, habitacles, foule** |
 | `check_assets` | 112 | 13 modèles 3D embarqués |
 | `test_render` / `test_bundle` | 7 / 4 | rendu sans GPU, fichier livré |
+
+## 🌇 v0.9 — Le rendu passe un cap
+
+- **Post-traitement** : GTAO (occlusion ambiante), bloom des sources lumineuses,
+  sortie ACES. Palier réglable (*Réglages → Graphismes*), repli automatique si
+  le GPU refuse.
+- **Ciel atmosphérique** : dôme shader (dégradé + brume), halo solaire, nuages
+  en sprites. Fini le fond bleu uni et les boîtes grises.
+- **Rue vivante** : ~1 100 objets instanciés (poubelles, bornes, bacs à fleurs,
+  abribus), châteaux d'eau et antennes sur les toits.
+- **Habitacles** : planche de bord, volant, sièges, rétroviseur — visibles à
+  travers les vitres et en vue 1ʳᵉ personne.
+- **Ombres de contact** sous les véhicules, les 44 PNJ et le joueur.
+- **Foule variée** : chaque passant a sa teinte et sa taille.
+- Détail : [`docs/12_GRAPHISMES_v0.9.md`](docs/12_GRAPHISMES_v0.9.md).
 
 ## 📖 v0.8 — On arrive sans rien
 
@@ -200,6 +216,7 @@ Les personnages, véhicules et l'avatar du joueur sont de **vrais modèles 3D** 
 | [`docs/09_FIX_V0.6.md`](docs/09_FIX_V0.6.md) | Correctifs façades / arbres / saut / L3 / moto, avec mesures |
 | [`docs/10_GPS_TEMPS_REEL_v0.7.md`](docs/10_GPS_TEMPS_REEL_v0.7.md) | GPS temps réel : projection, recalcul, manœuvres, coût A* |
 | [`docs/11_HISTOIRE_EMPLOI_v0.8.md`](docs/11_HISTOIRE_EMPLOI_v0.8.md) | v0.8 : franchissement, histoire, emploi, carrosserie, moteur |
+| [`docs/12_GRAPHISMES_v0.9.md`](docs/12_GRAPHISMES_v0.9.md) | v0.9 : post-traitement, ciel, mobilier, habitacles, foule |
 
 ## 📁 Structure
 

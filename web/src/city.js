@@ -26,6 +26,13 @@ const blockCenter = (i) => (i - (N - 1) / 2) * P;
  */
 export const STEP_UP = 0.36;
 
+// Vitrage d'abribus : partagé par toutes les instances (1 matériau).
+const glassShelterMat = new THREE.MeshPhysicalMaterial({
+  color: 0x9fc4e0, roughness: 0.05, metalness: 0.0,
+  transparent: true, opacity: 0.22, envMapIntensity: 1.6,
+  side: THREE.DoubleSide, depthWrite: false,
+});
+
 // ---- Métropole étendue (8,19 km) ----
 // La grille du cœur (routes tous les 64 m, à partir de -224) est prolongée
 // mathématiquement sur 128 blocs par axe. Seuls les blocs proches du joueur
@@ -438,6 +445,7 @@ export class City {
     this.indexColliders();
     this.buildMetroGround();
     this.buildHighways();
+    this.buildRoofDetails();
     this.buildCircuit();
     this.chunks = new Map();
     this.focus = { x: 0, z: 0 };
@@ -662,8 +670,164 @@ export class City {
     }
     this.pedestrianStreets = { v: pl.v.map((k) => ({ k, x: -WORLD_HALF + (k - CORE_I) * P })), h: pl.h.map((k) => ({ k, z: -WORLD_HALF + (k - CORE_I) * P })) };
 
+    // ---------- 5. mobilier de trottoir (v0.9) ------------------------------
+    // Avant : chaussée, trottoir, arbres, lampadaires. Une rue réelle a aussi
+    // des poubelles, des bornes d'incendie, des bacs à fleurs et des abribus.
+    // Ce sont eux qui donnent l'échelle (1 m = 1 m) et cassent la ligne vide
+    // du trottoir. Tout est instancié : 4 draw calls pour des milliers d'objets.
+    const props = { bin: [], hydrant: [], planter: [], shelter: [] };
+    const sidewalksOf = (coords, horizontal) => {
+      const h = horizontal ? S.horizontal(coords.k) : S.vertical(coords.k);
+      if (!(h.klass === 'avenue' || h.klass === 'boulevard')) return;
+      for (let a = -NEAR; a <= NEAR; a += 46) {
+        const f = ((a + 700) % P + P) % P;
+        if (f < 16 || f > P - 16) continue;               // carrefour
+        for (const side of [-1, 1]) {
+          const base = horizontal ? { x: a, z: coords.c } : { x: coords.c, z: a };
+          const off = 10.6 * side;
+          const px = horizontal ? base.x : base.x + off;
+          const pz = horizontal ? base.z + off : base.z;
+          const r = rng();
+          if (r < 0.30) props.bin.push({ x: px, z: pz });
+          else if (r < 0.42) props.hydrant.push({ x: px, z: pz });
+          else if (r < 0.62) props.planter.push({ x: px, z: pz });
+        }
+      }
+    };
+    for (let k = 0; k <= 128; k++) {
+      const c = -WORLD_HALF + (k - CORE_I) * P;
+      if (Math.abs(c) > NEAR) continue;
+      sidewalksOf({ k, c }, true);
+      sidewalksOf({ k, c }, false);
+    }
+    // abribus : un tous les ~3 blocs, côté pair, sur les avenues nord-sud
+    for (let k = 0; k <= 128; k += 3) {
+      const c = -WORLD_HALF + (k - CORE_I) * P;
+      if (Math.abs(c) > NEAR - 100) continue;
+      const v = S.vertical(k);
+      if (!(v.klass === 'avenue' || v.klass === 'boulevard')) continue;
+      for (let a = -NEAR + 120; a <= NEAR - 120; a += 300) {
+        if (rng() < 0.5) props.shelter.push({ x: c + 11.2, z: a, rot: Math.PI / 2 });
+        else props.shelter.push({ x: c - 11.2, z: a, rot: -Math.PI / 2 });
+      }
+    }
+
+    const instanced = (geo, mat, list, y, rotFix = 0, scl = 1) => {
+      if (!list.length) return null;
+      const m = new THREE.InstancedMesh(geo, mat, list.length);
+      list.forEach((o, i) => {
+        dummy.position.set(o.x, y, o.z);
+        dummy.rotation.set(0, (o.rot || 0) + rotFix, 0);
+        dummy.scale.setScalar(scl * (o.s || 1));
+        dummy.updateMatrix();
+        m.setMatrixAt(i, dummy.matrix);
+      });
+      m.instanceMatrix.needsUpdate = true;
+      m.castShadow = true; m.receiveShadow = true;
+      return m;
+    };
+
+    const binBody = instanced(new THREE.CylinderGeometry(0.27, 0.22, 0.9, 10),
+      new THREE.MeshStandardMaterial({ color: 0x2c4a3a, metalness: 0.45, roughness: 0.62 }), props.bin, 0.6);
+    const binLid = instanced(new THREE.CylinderGeometry(0.29, 0.29, 0.06, 10),
+      new THREE.MeshStandardMaterial({ color: 0x1d332a, metalness: 0.5, roughness: 0.5 }), props.bin, 1.06);
+    const hydBody = instanced(new THREE.CylinderGeometry(0.12, 0.15, 0.62, 8),
+      new THREE.MeshStandardMaterial({ color: 0xb02525, metalness: 0.3, roughness: 0.55 }), props.hydrant, 0.46);
+    const hydCap = instanced(new THREE.SphereGeometry(0.15, 8, 6),
+      new THREE.MeshStandardMaterial({ color: 0xc93030, metalness: 0.3, roughness: 0.5 }), props.hydrant, 0.82);
+    // bac à fleurs : caisse + terreau fleuri
+    const planterBox = instanced(new THREE.BoxGeometry(1.5, 0.52, 0.58),
+      new THREE.MeshStandardMaterial({ color: 0x6f6a60, roughness: 0.9 }), props.planter, 0.41);
+    const planterTop = instanced(new THREE.BoxGeometry(1.38, 0.16, 0.48),
+      new THREE.MeshStandardMaterial({ color: 0x3f7a35, roughness: 1 }), props.planter, 0.70);
+    // abribus : toit + paroi vitrée + banc
+    const shelterRoof = instanced(new THREE.BoxGeometry(0.2, 0.12, 4.2),
+      new THREE.MeshStandardMaterial({ color: 0x2b3a4a, metalness: 0.6, roughness: 0.4 }), props.shelter, 2.55);
+    const shelterGlass = instanced(new THREE.BoxGeometry(0.06, 2.1, 4.0), glassShelterMat, props.shelter, 1.35);
+    for (const m of [binBody, binLid, hydBody, hydCap, planterBox, planterTop, shelterRoof, shelterGlass]) {
+      if (m) { group.add(m); }
+    }
+    // colliders : on ne traverse pas une poubelle ni un abribus
+    for (const b of props.bin) this.addCollider(b.x, b.z, 0.6, 0.6, 1.0);
+    for (const h of props.hydrant) this.addCollider(h.x, h.z, 0.34, 0.34, 0.9);
+    for (const pl2 of props.planter) this.addCollider(pl2.x, pl2.z, 1.5, 0.6, 0.7);
+    for (const sh of props.shelter) this.addCollider(sh.x, sh.z, 0.5, 4.0, 2.6);
+    this.propCounts = { bin: props.bin.length, hydrant: props.hydrant.length, planter: props.planter.length, shelter: props.shelter.length };
+
     group.traverse((o) => { if (o.isMesh || o.isInstancedMesh) { o.matrixAutoUpdate = false; o.updateMatrix(); } });
     this.scene.add(group);
+  }
+
+  /**
+   * Détails de toiture (v0.9) — châteaux d'eau et antennes.
+   *
+   * POURQUOI : vus de la rue ou depuis un toit, tous les immeubles finissaient
+   * sur une boîte plate. Deux volumes instanciés suffisent à donner une
+   * silhouette de skyline crédible (et ils coûtent 2 draw calls au total).
+   */
+  buildRoofDetails() {
+    const list = this._roofProps || [];
+    if (!list.length || typeof THREE.InstancedMesh !== 'function') return;
+    const rng = mulberry32(0x70F5);
+    const tanks = [], antennas = [];
+    for (const b of list) {
+      const r = rng();
+      if (r < 0.32) tanks.push(b);
+      else if (r < 0.62) antennas.push(b);
+    }
+    const dummy = new THREE.Object3D();
+    const group = new THREE.Group();
+
+    if (tanks.length) {
+      // cuve + 4 pieds + toit conique, regroupés en 3 InstancedMesh
+      const tankMat = new THREE.MeshStandardMaterial({ color: 0x8a6a4a, roughness: 0.85, metalness: 0.1 });
+      const legMat = new THREE.MeshStandardMaterial({ color: 0x4a4038, roughness: 0.8, metalness: 0.4 });
+      const bodyGeo = new THREE.CylinderGeometry(1.5, 1.5, 2.6, 12);
+      const roofGeo = new THREE.ConeGeometry(1.62, 0.8, 12);
+      const legGeo = new THREE.CylinderGeometry(0.07, 0.07, 1.7, 6);
+      const bodies = new THREE.InstancedMesh(bodyGeo, tankMat, tanks.length);
+      const lids = new THREE.InstancedMesh(roofGeo, tankMat, tanks.length);
+      const legs = new THREE.InstancedMesh(legGeo, legMat, tanks.length * 4);
+      let ln = 0;
+      tanks.forEach((b, i) => {
+        const x = b.x + (rng() - 0.5) * b.w * 0.4;
+        const z = b.z + (rng() - 0.5) * b.d * 0.4;
+        const baseY = b.h + 0.15;
+        dummy.rotation.set(0, rng() * Math.PI, 0); dummy.scale.setScalar(1);
+        dummy.position.set(x, baseY + 1.7 + 1.3, z); dummy.updateMatrix(); bodies.setMatrixAt(i, dummy.matrix);
+        dummy.position.set(x, baseY + 1.7 + 2.6 + 0.4, z); dummy.updateMatrix(); lids.setMatrixAt(i, dummy.matrix);
+        for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+          dummy.position.set(x + sx * 1.05, baseY + 0.85, z + sz * 1.05);
+          dummy.rotation.set(0, 0, 0);
+          dummy.updateMatrix(); legs.setMatrixAt(ln++, dummy.matrix);
+        }
+      });
+      for (const m of [bodies, lids, legs]) { m.instanceMatrix.needsUpdate = true; m.castShadow = true; }
+      group.add(bodies, lids, legs);
+    }
+
+    if (antennas.length) {
+      const antMat = new THREE.MeshStandardMaterial({ color: 0x3b4048, metalness: 0.7, roughness: 0.4 });
+      const mastGeo = new THREE.CylinderGeometry(0.06, 0.09, 4.2, 6);
+      const tipGeo = new THREE.SphereGeometry(0.13, 6, 5);
+      const tipMat = new THREE.MeshStandardMaterial({ color: 0x2a2f36, emissive: 0xff3b30, emissiveIntensity: 0.0 });
+      const masts = new THREE.InstancedMesh(mastGeo, antMat, antennas.length);
+      const tips = new THREE.InstancedMesh(tipGeo, tipMat, antennas.length);
+      antennas.forEach((b, i) => {
+        const x = b.x + (rng() - 0.5) * b.w * 0.5;
+        const z = b.z + (rng() - 0.5) * b.d * 0.5;
+        dummy.rotation.set(0, 0, 0); dummy.scale.setScalar(1);
+        dummy.position.set(x, b.h + 0.15 + 2.1, z); dummy.updateMatrix(); masts.setMatrixAt(i, dummy.matrix);
+        dummy.position.set(x, b.h + 0.15 + 4.2, z); dummy.updateMatrix(); tips.setMatrixAt(i, dummy.matrix);
+      });
+      masts.instanceMatrix.needsUpdate = true; tips.instanceMatrix.needsUpdate = true;
+      masts.castShadow = true;
+      this.antennaTipMat = tipMat;      // allumé la nuit par setNightFactor
+      group.add(masts, tips);
+    }
+    group.traverse((o) => { if (o.isMesh || o.isInstancedMesh) { o.matrixAutoUpdate = false; o.updateMatrix(); } });
+    this.scene.add(group);
+    this.roofStats = { tanks: tanks.length, antennas: antennas.length };
   }
 
   // ============================== CANAL ====================================
@@ -1116,6 +1280,8 @@ export class City {
       const kind = district === 'downtown' || palette === 'office' || palette === 'glass' ? 'work'
         : palette === 'shop' ? 'shop' : 'home';
       this.buildings.push({ x, z, w, d, h, district, kind, door });
+      // détail de toit (château d'eau / antenne) — instancié plus loin
+      if (h > 11) (this._roofProps ??= []).push({ x, z, w, d, h, district });
       // clim / détails toit sur les gros bâtiments
       if (h > 16 && chance(0.7)) {
         const ac = new THREE.Mesh(new THREE.BoxGeometry(w * 0.3, 1.2, d * 0.3),
@@ -1579,6 +1745,8 @@ export class City {
     if (this.lampHeadMat) this.lampHeadMat.emissiveIntensity = f * 2.4;
     if (this.lampGlowMat) this.lampGlowMat.opacity = f * 0.16;
     if (this.highwayLampMat) this.highwayLampMat.emissiveIntensity = f * 2.6;
+    // balises d'antenne : rouges la nuit, invisibles le jour
+    if (this.antennaTipMat) this.antennaTipMat.emissiveIntensity = f * 1.6;
   }
 
   randomBuilding(kind) {

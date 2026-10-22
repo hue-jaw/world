@@ -47,6 +47,49 @@ function makeRainTexture() {
   return new THREE.CanvasTexture(c);
 }
 
+/**
+ * Texture de nuage : plusieurs lobes radiaux doux sur un canvas 256².
+ * Une seule texture partagée par les 64 sprites (1 upload, 0 coût réseau).
+ */
+function makeCloudTexture() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 256;
+  const g = c.getContext('2d');
+  if (!g) return null;
+  g.clearRect(0, 0, 256, 256);
+  // amas de gouttes : des cercles de rayon variable, très flous
+  for (let i = 0; i < 26; i++) {
+    const x = 128 + randRange(-70, 70), y = 128 + randRange(-46, 46);
+    const r = randRange(26, 74);
+    const grad = g.createRadialGradient(x, y, 0, x, y, r);
+    grad.addColorStop(0, 'rgba(255,255,255,0.34)');
+    grad.addColorStop(0.55, 'rgba(255,255,255,0.16)');
+    grad.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = grad;
+    g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+/** Halo circulaire additif (soleil). */
+function makeGlowTexture() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const g = c.getContext('2d');
+  if (!g) return null;
+  const grad = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+  grad.addColorStop(0, 'rgba(255,248,225,0.95)');
+  grad.addColorStop(0.25, 'rgba(255,236,190,0.45)');
+  grad.addColorStop(0.6, 'rgba(255,220,160,0.12)');
+  grad.addColorStop(1, 'rgba(255,210,140,0)');
+  g.fillStyle = grad; g.fillRect(0, 0, 128, 128);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
 export class Environment {
   constructor(scene, city, renderer) {
     this.scene = scene;
@@ -117,15 +160,78 @@ export class Environment {
     this.sunDisc = disc(0xfff2c8, 34);
     this.moonDisc = disc(0xdfe9f7, 20);
 
-    // --- nuages (boîtes molles dérivantes) ---
+    // --- dôme atmosphérique (v0.9) -------------------------------------------
+    // Avant : `scene.background` = une couleur unie. Résultat : un mur bleu
+    // derrière les immeubles, aucun dégradé, aucun halo solaire — l'un des
+    // plus gros « ça fait amateur » du rendu.
+    // Maintenant : un dôme qui suit le joueur, avec dégradé zénith/horizon,
+    // halo de soleil et bande de brume à l'horizon. Coût : 1 draw call.
+    this.skyMat = new THREE.ShaderMaterial({
+      side: THREE.BackSide, depthWrite: false, depthTest: false, fog: false,
+      uniforms: {
+        topColor:     { value: new THREE.Color(0x2f6bb0) },
+        horizonColor: { value: new THREE.Color(0xbdd7ee) },
+        sunColor:     { value: new THREE.Color(0xfff3e0) },
+        sunDir:       { value: new THREE.Vector3(0.3, 0.6, 0.4) },
+        sunPower:     { value: 1 },
+        haze:         { value: 0.35 },
+      },
+      vertexShader: `
+        varying vec3 vDir;
+        void main() {
+          vDir = normalize(position);
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }`,
+      fragmentShader: `
+        uniform vec3 topColor, horizonColor, sunColor, sunDir;
+        uniform float sunPower, haze;
+        varying vec3 vDir;
+        void main() {
+          vec3 d = normalize(vDir);
+          float t = pow(clamp(d.y, 0.0, 1.0), 0.55);
+          vec3 col = mix(horizonColor, topColor, t);
+          // halo solaire : large diffusion + cœur serré (deux lobes)
+          float c = max(dot(d, normalize(sunDir)), 0.0);
+          col += sunColor * (pow(c, 6.0) * 0.16 + pow(c, 260.0) * 1.1) * sunPower;
+          // brume d'horizon : donne la profondeur atmosphérique
+          float band = exp(-abs(d.y) * 14.0);
+          col = mix(col, horizonColor, band * haze);
+          gl_FragColor = vec4(col, 1.0);
+          #include <tonemapping_fragment>
+          #include <colorspace_fragment>
+        }`,
+    });
+    this.skyDome = new THREE.Mesh(new THREE.SphereGeometry(1500, 40, 24), this.skyMat);
+    this.skyDome.frustumCulled = false;
+    this.skyDome.renderOrder = -1000;
+    scene.add(this.skyDome);
+
+    // --- nuages (v0.9) ------------------------------------------------------
+    // Avant : 42 boîtes planes — visibles comme des parallélépipèdes. Maintenant
+    // des sprites à dégradé doux, toujours face caméra, qui dérivent.
     this.clouds = new THREE.Group();
-    this.cloudMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.0, fog: false });
-    for (let i = 0; i < 42; i++) {
-      const cl = new THREE.Mesh(new THREE.BoxGeometry(randRange(50, 130), randRange(4, 8), randRange(34, 80)), this.cloudMat);
-      cl.position.set(randRange(-520, 520), randRange(115, 160), randRange(-520, 520));
-      this.clouds.add(cl);
+    const cloudTex = makeCloudTexture();
+    this.cloudMat = new THREE.SpriteMaterial({
+      map: cloudTex, color: 0xffffff, transparent: true, opacity: 0,
+      depthWrite: false, fog: false,
+    });
+    for (let i = 0; i < 64; i++) {
+      const sp = new THREE.Sprite(this.cloudMat);
+      const sc = randRange(190, 520);
+      sp.scale.set(sc, sc * randRange(0.32, 0.52), 1);
+      sp.position.set(randRange(-900, 900), randRange(150, 320), randRange(-900, 900));
+      sp.userData.speed = randRange(1.4, 4.2);
+      this.clouds.add(sp);
     }
     scene.add(this.clouds);
+
+    // halo de soleil (sprite additif) : le disque seul faisait « autocollant »
+    this.sunHalo = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: makeGlowTexture(), color: 0xfff0c0, transparent: true, opacity: 0,
+      blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false, fog: false,
+    }));
+    this.sunHalo.scale.setScalar(360);
+    scene.add(this.sunHalo);
 
     // --- pluie (particules recyclées autour de la caméra) ---
     const RAIN_N = 2400;
@@ -221,7 +327,11 @@ export class Environment {
     const sky = skyAt(this.hour);
     const grey = this.params.cloud * 0.45;
     const skyCol = sky.sky.clone().lerp(new THREE.Color(0x6d7885), grey);
-    this.scene.background.copy(skyCol);
+    this.scene.background.copy(skyCol);   // repli si le dôme est indisponible
+    // dégradé du dôme : zénith plus saturé que l'horizon (physique du ciel)
+    const topCol = skyCol.clone().multiplyScalar(0.82).lerp(sky.sky.clone().multiplyScalar(1.15), 0.5);
+    this.skyMat.uniforms.topColor.value.copy(topCol);
+    this.skyMat.uniforms.horizonColor.value.copy(sky.fog.clone().lerp(new THREE.Color(0x8a929c), grey));
     // --- reflets et chaussée mouillée ---
     this.updateEnvironment(sky);
     const wet = clamp(this.rainIntensity * 0.95 + (this.params.cloud > 0.8 ? 0.15 : 0), 0, 1);
@@ -276,13 +386,28 @@ export class Environment {
     this.headlightsOn = this.headlightOverride !== null ? this.headlightOverride : autoLights;
     headlightGlowMat.opacity = this.headlightsOn ? 0.15 : 0;
 
-    // ----- nuages -----
-    this.cloudMat.opacity = this.params.cloud * 0.52;
-    this.cloudMat.color.copy(sky.cloudCol).lerp(new THREE.Color(0x565e68), this.params.cloud * 0.35);
+    // ----- dôme : suit le joueur et reçoit le soleil -----
+    this.skyDome.position.set(pp.x, 0, pp.z);
+    this.skyMat.uniforms.sunDir.value.copy(sunDir);
+    this.skyMat.uniforms.sunColor.value.copy(sky.sun);
+    this.skyMat.uniforms.sunPower.value = clamp(sunDir.y * 3, 0, 1) * (1 - this.params.cloud * 0.75) + 0.08;
+    this.skyMat.uniforms.haze.value = 0.22 + this.params.cloud * 0.35 + this.params.fogDensity * 26;
+
+    // ----- nuages (sprites) -----
+    this.cloudMat.opacity = clamp(this.params.cloud * 0.85, 0, 0.85);
+    this.cloudMat.color.copy(sky.cloudCol).lerp(new THREE.Color(0x606a76), this.params.cloud * 0.42);
     for (const cl of this.clouds.children) {
-      cl.position.x += dt * (2 + this.params.cloud * 3);
-      if (cl.position.x > pp.x + 560) cl.position.x = pp.x - 560;
+      cl.position.x += dt * (cl.userData.speed || 2) * (1 + this.params.cloud);
+      if (cl.position.x > pp.x + 900) cl.position.x = pp.x - 900;
+      if (cl.position.x < pp.x - 980) cl.position.x = pp.x + 880;
+      if (cl.position.z > pp.z + 900) cl.position.z -= 1800;
+      if (cl.position.z < pp.z - 980) cl.position.z += 1800;
     }
+
+    // ----- halo solaire -----
+    this.sunHalo.position.set(pp.x + sunDir.x * 800, sunDir.y * 800, pp.z + sunDir.z * 800);
+    this.sunHalo.material.color.copy(sky.sun);
+    this.sunHalo.material.opacity = clamp(sunDir.y * 4, 0, 1) * (0.55 - this.params.cloud * 0.45);
 
     // ----- pluie -----
     this.rain.visible = this.rainIntensity > 0.02;

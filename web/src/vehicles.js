@@ -8,6 +8,7 @@ import * as THREE from 'three';
 import { CFG, Bus, clamp, lerp, damp, angleDelta, pick, rand, randRange, randInt, VEHICLE_TYPES, randomVehicleType } from './core.js';
 import { DIRS, RING } from './city.js';
 import Assets from './assets.js';
+import { contactShadow } from './contact.js';
 
 const V3 = () => new THREE.Vector3();
 // Multiplicateur global de reflets (mode RTX / qualité lumière). Les véhicules
@@ -27,6 +28,9 @@ const glassMat = new THREE.MeshPhysicalMaterial({
   clearcoat: 1, clearcoatRoughness: 0.04,
 });
 const tireMat = new THREE.MeshStandardMaterial({ color: 0x14161a, roughness: 0.95 });
+// Habitacle : plastique mat + tissu. Partagés par tous les véhicules.
+const interiorDashMat = new THREE.MeshStandardMaterial({ color: 0x191d23, roughness: 0.78, metalness: 0.08 });
+const interiorSeatMat = new THREE.MeshStandardMaterial({ color: 0x2b2f36, roughness: 0.95, metalness: 0.0 });
 const hubMat = new THREE.MeshStandardMaterial({ color: 0xb9c0c9, roughness: 0.35, metalness: 0.7 });
 
 
@@ -182,6 +186,8 @@ function buildMotoMesh(t) {
   });
   const chrome = new THREE.MeshStandardMaterial({ color: 0xbfc4cc, roughness: 0.28, metalness: 0.95 });
   const darkMat = new THREE.MeshStandardMaterial({ color: 0x191c21, roughness: 0.55, metalness: 0.3 });
+  const cs2 = contactShadow(t.wid * 0.8, t.len * 1.05);   // la moto aussi pose au sol
+  if (cs2) g.add(cs2);
   const wheelR = 0.32;
   const wheels = [], frontPivots = [];
   const wheelGeo = new THREE.CylinderGeometry(wheelR, wheelR, 0.14, 16);
@@ -231,43 +237,6 @@ function buildMotoMesh(t) {
   const glow = new THREE.Mesh(new THREE.PlaneGeometry(1.9, 7), headlightGlowMat);
   glow.rotation.x = -Math.PI / 2; glow.position.set(0, 0.06, 4.0); g.add(glow);
   return { group: g, wheels, frontPivots, headMat, brakeMat, beacon: null, wheelR, paint, driverFig, glass: null, isMoto: true };
-}
-
-/**
- * Ombre de contact portée au sol (v0.8).
- *
- * Pourquoi : sans elle, un véhicule « flotte » — l'ombre projetée par le soleil
- * est trop douce ou absente selon l'heure. Une simple tache sombre dégradée
- * sous la caisse colle la voiture à la route, pour un quad et une texture
- * partagée. C'est le détail qui change le plus la perception de qualité.
- */
-let _contactTex = null, _contactMat = null;
-function contactShadow(wid, len) {
-  // Harnais sans DOM (tests d'assets) : pas de canvas => pas d'ombre, mais
-  // surtout pas d'exception au milieu de la construction d'un véhicule.
-  if (typeof document === 'undefined' || typeof document.createElement !== 'function') return null;
-  if (!_contactTex) {
-    const c = document.createElement('canvas');
-    c.width = c.height = 128;
-    const g = c.getContext('2d');
-    if (g) {
-      const grad = g.createRadialGradient(64, 64, 8, 64, 64, 64);
-      grad.addColorStop(0, 'rgba(0,0,0,0.55)');
-      grad.addColorStop(0.55, 'rgba(0,0,0,0.28)');
-      grad.addColorStop(1, 'rgba(0,0,0,0)');
-      g.fillStyle = grad; g.fillRect(0, 0, 128, 128);
-    }
-    _contactTex = new THREE.CanvasTexture(c);
-    _contactMat = new THREE.MeshBasicMaterial({
-      map: _contactTex, transparent: true, depthWrite: false,
-      blending: THREE.NormalBlending, opacity: 0.85, fog: true,
-    });
-  }
-  const m = new THREE.Mesh(new THREE.PlaneGeometry(wid * 1.5, len * 1.18), _contactMat);
-  m.rotation.x = -Math.PI / 2;
-  m.position.y = 0.035;
-  m.renderOrder = 0;
-  return m;
 }
 
 /**
@@ -333,6 +302,56 @@ function addCarDetails(g, t, bodyY, paint) {
 /** SUV/Utilitaire partagent le besoin de barres de toit. */
 function typeName_isVanLike(t) { return t.suv === true; }
 
+/**
+ * Habitacle (v0.9). Les vitres sont translucides depuis la v0.8 : un habitacle
+ * vide se voyait donc à travers la carrosserie, et la vue 1ʳᵉ personne donnait
+ * l'impression de flotter devant un pare-brise. Planche de bord, volant, sièges
+ * et rétroviseur intérieur coûtent ~150 triangles et changent tout.
+ */
+function addInterior(g, t, bodyY) {
+  const dark = interiorDashMat;
+  const soft = interiorSeatMat;
+  const metal = new THREE.MeshStandardMaterial({ color: 0x2a2f36, metalness: 0.85, roughness: 0.35 });
+  const cabinW = t.wid * 0.82;
+  const noseZ = t.len * 0.16;            // planche de bord, côté pare-brise
+  const floorY = bodyY - 0.12;
+
+  // planche de bord + casquette de compteur
+  const dash = new THREE.Mesh(new THREE.BoxGeometry(cabinW, 0.20, 0.34), dark);
+  dash.position.set(0, bodyY + 0.16, noseZ);
+  const hoodDash = new THREE.Mesh(new THREE.BoxGeometry(cabinW * 0.96, 0.07, 0.30), dark);
+  hoodDash.position.set(0, bodyY + 0.27, noseZ + 0.03);
+  // console centrale
+  const console3 = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.16, t.len * 0.30), dark);
+  console3.position.set(0, bodyY - 0.02, -t.len * 0.02);
+  // volant (à gauche, conduite française) + colonne
+  const wheel = new THREE.Mesh(new THREE.TorusGeometry(0.155, 0.022, 8, 18), dark);
+  wheel.position.set(-t.wid * 0.21, bodyY + 0.30, noseZ - 0.20);
+  wheel.rotation.x = -1.16;
+  const col = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.045, 0.24, 8), metal);
+  col.position.set(-t.wid * 0.21, bodyY + 0.24, noseZ - 0.30);
+  col.rotation.x = Math.PI / 2 - 0.25;
+  // sièges avant : assise + dossier + appuie-tête
+  for (const sx of [-1, 1]) {
+    const seat = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.12, 0.46), soft);
+    seat.position.set(sx * t.wid * 0.21, floorY + 0.12, -t.len * 0.03);
+    const back = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.52, 0.11), soft);
+    back.position.set(sx * t.wid * 0.21, floorY + 0.38, -t.len * 0.03 - 0.24);
+    back.rotation.x = -0.12;
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.14, 0.10), soft);
+    head.position.set(sx * t.wid * 0.21, floorY + 0.70, -t.len * 0.03 - 0.27);
+    g.add(seat, back, head);
+  }
+  // rétroviseur intérieur
+  const mirror = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.07, 0.03), metal);
+  mirror.position.set(0, bodyY + 0.42, noseZ + 0.06);
+  // levier de vitesses
+  const lever = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.026, 0.14, 6), metal);
+  lever.position.set(0, bodyY + 0.07, -t.len * 0.06);
+
+  g.add(dash, hoodDash, console3, wheel, col, mirror, lever);
+}
+
 function buildVehicleMesh(typeName) {
   const t = VEHICLE_TYPES[typeName];
   if (t.moto) return buildMotoMesh(t);
@@ -396,6 +415,9 @@ function buildVehicleMesh(typeName) {
   bodyY = wheelR + t.bodyH / 2 - 0.06;
   roofY = bodyY + t.bodyH / 2 + t.cabinH;
   }
+
+  // Habitacle visible à travers les vitres (et en vue 1ʳᵉ personne)
+  if (!t.van) addInterior(g, t, bodyY);
 
   // Détails de carrosserie (rétros, plaques, échappements, becquet)
   addCarDetails(g, t, bodyY, paint);
