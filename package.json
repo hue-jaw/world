@@ -1,0 +1,21 @@
+{
+  "name": "metropolis",
+  "version": "0.9.0",
+  "private": true,
+  "description": "METROPOLIS — open-world urbain (référence WebGL v0.9.0 + projet Unreal Engine 5)",
+  "type": "module",
+  "scripts": {
+    "build:assets": "node tools/build_assets.mjs",
+    "build": "node tools/build_single_file.mjs",
+    "pretest": "node tools/build_assets.mjs",
+    "test": "node tools/smoke_test.mjs && node tools/test_features.mjs && node tools/test_integration.mjs && node tools/test_v04.mjs && node tools/test_v05.mjs && node tools/test_v06.mjs && node tools/test_v07.mjs && node tools/test_v08.mjs && node tools/test_v09.mjs && node tools/check_assets.mjs && node tools/test_render.mjs && node tools/build_single_file.mjs && node tools/test_bundle.mjs && node tools/test_unreal_project.mjs",
+    "test:render": "node tools/test_render.mjs",
+    "test:bundle": "node tools/build_single_file.mjs && node tools/test_bundle.mjs",
+    "test:v05": "node tools/test_v05.mjs",
+    "test:v06": "node tools/test_v06.mjs",
+    "test:v07": "node tools/test_v07.mjs",
+    "test:v08": "node tools/test_v08.mjs",
+    "test:v09": "node tools/test_v09.mjs",
+    "test:unreal": "node tools/test_unreal_project.mjs"
+  }
+}

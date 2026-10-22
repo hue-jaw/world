@@ -1,0 +1,46 @@
+{
+  "name": "metropolis-desktop",
+  "productName": "METROPOLIS",
+  "version": "0.9.0",
+  "private": true,
+  "description": "METROPOLIS - coquille desktop du prototype jouable",
+  "main": "main.js",
+  "author": "hue-jaw",
+  "license": "UNLICENSED",
+  "scripts": {
+    "sync-game": "node sync-game.js",
+    "prestart": "node sync-game.js",
+    "start": "electron .",
+    "predist:win": "node sync-game.js",
+    "dist:win": "electron-builder --win portable --x64"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.metropolis.game",
+    "productName": "METROPOLIS",
+    "files": [
+      "main.js",
+      "index.html"
+    ],
+    "directories": {
+      "output": "release",
+      "buildResources": "."
+    },
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "portable": {
+      "artifactName": "METROPOLIS-${version}-win64.exe"
+    }
+  }
+}

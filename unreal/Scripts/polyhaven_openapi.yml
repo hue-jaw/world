@@ -1,0 +1,1215 @@
+openapi: '3.0.2'
+info:
+  title: Poly Haven API
+  version: '1.0.0'
+  description: Provides endpoints for getting lists of assets, categories, and information about individual assets on polyhaven.com. The API is hosted at https://api.polyhaven.com
+  license:
+    name: AGPL
+    url: https://github.com/Poly-Haven/Public-API/blob/master/LICENSE
+  termsOfService: 'https://github.com/Poly-Haven/Public-API/blob/master/ToS.md'
+  contact:
+    name: Poly Haven
+    url: https://api.polyhaven.com
+    email: info@polyhaven.com
+servers:
+  - url: https://api.polyhaven.com
+tags:
+  - name: assets
+    description: Endpoints for interacting with assets.
+paths:
+  /types:
+    get:
+      summary: List of asset types available.
+      description: 'We currently publish three types of assets: `hdris`, `textures` and `models`. This endpoint simply returns an array of those types.'
+      tags:
+        - assets
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                description: Array of asset types
+                example: ['hdris', 'textures', 'models']
+  /assets:
+    get:
+      summary: A list of assets, including their individual metadata.
+      description: To filter the returned data, some **optional arguments** can by provided in the request URL (e.g. `/assets?t=hdris&c=outdoor`)
+      tags:
+        - assets
+      parameters:
+        - name: type
+          in: query
+          description: Filter to assets of a particular type. Can be `hdris`/`textures`/`models`/`all`.
+          schema:
+            type: string
+          example: textures
+        - name: categories
+          in: query
+          description: (Legacy) A comma-separated list of categories to filter by. Only assets that match all categories specified will be included. Use the `/categories` endpoint to get a list of available categories.
+          schema:
+            type: string
+          example: brick
+        - name: category
+          in: query
+          description: >-
+            Filter by the single-path category taxonomy. Accepts either the canonical path
+            (`Brick & Block/Clay Brick`) or the URL slug path (`brick-block/clay-brick`).
+            Matching is **inclusive**: a parent category also returns everything nested beneath it.
+            Use the `/taxonomy` endpoint to get the full tree.
+          schema:
+            type: string
+          example: brick-block/clay-brick
+        - name: collection
+          in: query
+          description: Filter to assets belonging to a collection (see `/collections`).
+          schema:
+            type: string
+          example: the_shed
+        - name: vault
+          in: query
+          description: Filter to assets belonging to a vault (see `/vaults`).
+          schema:
+            type: string
+          example: beach
+        - name: attributes
+          in: query
+          description: >-
+            Any attribute key valid for the requested type may be used as its own query parameter,
+            e.g. `?weather=clear`, `?environment=outdoor`, `?material=wood,metal`. Multiple
+            comma-separated values are OR'd together, and different attributes are AND'd.
+            An unrecognised value returns 400 rather than silently matching everything.
+            Boolean attributes are stored only when true, so an absent value counts as false. Every
+            attribute whose false side is meaningful in its own right is an enum instead, where an
+            absent value means "not assessed" and matches nothing.
+            See `/taxonomy/{type}` for the attribute schema of each type.
+          schema:
+            type: string
+          example: weather=clear
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/assets'
+        '400':
+          description: Bad request, e.g. unsupported asset type or unknown category
+  /search:
+    get:
+      summary: Hybrid semantic + keyword search over asset metadata.
+      description: >-
+        Search that understands intent and synonyms and works in any language - `couch` finds sofas,
+        `plastique` finds plastic. Returns the **full ranked list** of matching slugs, most relevant
+        first, rather than a small page of results. Look up each slug's metadata via `/assets` (which
+        you will usually already have) or `/info/{id}`.
+
+
+        Two rankings are fused: vector similarity, and a keyword match over name, tags and
+        categories. Reciprocal Rank Fusion combines them by POSITION rather than score, so an asset
+        both agree on outranks one only the vectors liked. An exact slug or name match is pinned
+        first. A query that matches no keywords at all - any non-Latin query, for instance - falls
+        back to pure similarity on its own, so multilingual search is unaffected.
+
+
+        **The array order is the ranking.** `score` is the vector similarity only: it is what `min`
+        filters on and the interpretable number, but it does not by itself explain the order once a
+        keyword match has lifted something. Scores are also **not** a reliable "we have nothing like
+        this" signal - the library always returns its closest assets even for a query it has nothing
+        for - so treat a low top score as a hint, not a verdict.
+
+
+        Early-access assets (those with a `date_published` in the future) are included with
+        `future=true`, the same way `/assets` works. Unpublished work in progress is never returned.
+      tags:
+        - assets
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: The search query. Send it trimmed and lower-cased so it shares a cache entry with equivalent queries.
+          schema:
+            type: string
+            maxLength: 100
+          example: mossy rock
+        - name: t
+          in: query
+          description: 'Filter by asset type. `type` is accepted as an alias. One of: `hdris`, `textures`, `models`, `all`.'
+          schema:
+            type: string
+            enum: [hdris, textures, models, all]
+          example: textures
+        - name: future
+          in: query
+          description: Include early-access assets that are scheduled but not yet published.
+          schema:
+            type: boolean
+          example: true
+        - name: min
+          in: query
+          description: Minimum similarity score to return. Defaults to `0.35`. Pass `0` for every asset, ranked.
+          schema:
+            type: number
+            minimum: -1
+            maximum: 1
+          example: 0.45
+        - name: limit
+          in: query
+          description: Return at most this many results. `total` still reports the full count, so a result counter stays accurate.
+          schema:
+            type: integer
+          example: 50
+        - name: hybrid
+          in: query
+          description: Set to `0` to skip the keyword lane and rank on vector similarity alone. Mostly for comparing the two.
+          schema:
+            type: boolean
+            default: true
+          example: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/searchResults'
+        '400':
+          description: Bad request - missing or over-long query, or an unsupported asset type
+        '429':
+          description: Too many requests from this IP. Retry after the number of seconds in the `Retry-After` header.
+        '503':
+          description: The query could not be embedded. Fall back to your own keyword matching.
+  /info/{id}:
+    get:
+      summary: Information about an individual asset specified by its unique ID.
+      tags:
+        - assets
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The unique ID/slug of the asset
+          schema:
+            type: string
+          example: abandoned_factory_canteen_01
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/hdri'
+                  - $ref: '#/components/schemas/texture'
+                  - $ref: '#/components/schemas/model'
+        '400':
+          description: Bad request, e.g. missing {id}
+        '404':
+          description: No asset found with that ID
+  /files/{id}:
+    get:
+      summary: File list for a specific asset.
+      description: Many files are available for each asset, most of which are available in different resolutions and file formats. This endpoint provides a tree containing all the available files organized by resolution and file type.
+      tags:
+        - assets
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The unique ID/slug of the asset
+          schema:
+            type: string
+          example: ceramic_vase_03
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/hdriFiles'
+                  - $ref: '#/components/schemas/textureFiles'
+                  - $ref: '#/components/schemas/modelFiles'
+        '400':
+          description: Bad request, e.g. missing {id}
+        '404':
+          description: No asset found with that ID
+  /author/{id}:
+    get:
+      summary: Information about a specific author.
+      description: Returns some data about the requested author, such as their name (which may be different from the ID), links, email (if available), etc.
+      tags:
+        - assets
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The unique ID of the author
+          schema:
+            type: string
+          example: Andreas Mischok
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/author'
+        '400':
+          description: Bad request, e.g. missing {id}
+        '404':
+          description: No author found with that ID
+  /taxonomy:
+    get:
+      summary: The single-path category taxonomy for every asset type, plus the attribute schema.
+      description: >-
+        Each asset belongs to exactly **one** category, given as a path such as
+        `Coast & Water/Beaches/Sandy Beaches` (the asset's `category` field). This endpoint returns
+        that taxonomy as a tree per asset type.
+
+
+        Every node carries a stable `id` (a UUID that survives renames and reorders — safe to use as
+        a Blender catalog id), its canonical `path`, a URL-safe `slugPath`, a human `description`,
+        and its `children`.
+
+
+        Categories describe **what an asset is**. Qualities like weather, condition or material are
+        separate *attributes* (`asset.attributes`), whose schema is returned alongside the tree.
+      tags:
+        - assets
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  types:
+                    type: object
+                    description: Category tree, keyed by asset type.
+                  attributes:
+                    type: object
+                    description: Attribute schema, keyed by asset type.
+  /taxonomy/{type}:
+    get:
+      summary: The category taxonomy and attribute schema for a single asset type.
+      tags:
+        - assets
+      parameters:
+        - name: type
+          in: path
+          required: true
+          description: 'One of the supported asset types: `hdris`, `textures`, or `models`.'
+          schema:
+            type: string
+            example: hdris
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    type: string
+                  categories:
+                    type: array
+                    description: Top-level category nodes, each with nested `children`.
+                    items:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                        slug:
+                          type: string
+                        path:
+                          type: string
+                        slugPath:
+                          type: string
+                        id:
+                          type: string
+                        description:
+                          type: string
+                        children:
+                          type: array
+                          items:
+                            type: object
+                  attributes:
+                    type: object
+              example:
+                type: hdris
+                categories:
+                  - name: Coast & Water
+                    slug: coast-water
+                    path: Coast & Water
+                    slugPath: coast-water
+                    id: f30d179e-f9a7-57eb-b5d2-f9d71ad39458
+                    description: Outdoor scenes by the sea or inland water.
+                    children:
+                      - name: Beaches
+                        slug: beaches
+                        path: Coast & Water/Beaches
+                        slugPath: coast-water/beaches
+                        id: 0f2a1e2c-0000-0000-0000-000000000000
+                        description: Sandy and mixed shorelines.
+                        children: []
+        '400':
+          description: Bad request, e.g. unsupported asset type
+  /categories/{type}:
+    get:
+      summary: (Legacy) A list of available categories.
+      description: The list of categories also show the number of assets inside them. If `all` is passed as the {type}, then rather than returning categories, it simply returns a list of the asset types instead, with their asset counts.
+      tags:
+        - assets
+      parameters:
+        - name: type
+          in: path
+          required: true
+          description: 'One of the supported asset types: `hdris`, `textures`, or `models`.'
+          schema:
+            type: string
+            example: hdris
+        - name: in
+          in: query
+          description: A comma separated list of categories - only returns categories with assets that are also in these categories. The value of each key is then also only counting assets that are in both the categories specified and the key. If this is not specified, then an `all` "category" is also returned, with the count of all assets of the specified type.
+          schema:
+            type: string
+            example: night,clear
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  $category:
+                    type: integer
+                    description: Count of assets in this category.
+              example:
+                all: 512
+                natural light: 434
+                outdoor: 377
+                urban: 272
+                nature: 265
+                low contrast: 188
+                high contrast: 182
+                morning-afternoon: 181
+                partly cloudy: 171
+                medium contrast: 141
+                indoor: 140
+                skies: 130
+                clear: 117
+                sunrise-sunset: 114
+                midday: 103
+                artificial light: 103
+                overcast: 76
+                night: 31
+                studio: 18
+        '400':
+          description: Bad request, e.g. missing or unsupported {type}
+
+components:
+  schemas:
+    searchResults:
+      type: object
+      properties:
+        query:
+          type: string
+          description: The normalised query that was actually searched.
+          example: mossy rock
+        type:
+          type: string
+          description: The asset type filter that was applied.
+          example: textures
+        model:
+          type: string
+          description: Embedding model version. Changes when the library is re-embedded, which shifts scores.
+          example: qwen3-0.6b/v1
+        minScore:
+          type: number
+          example: 0.35
+        hybrid:
+          type: boolean
+          description: Whether the keyword lane actually contributed. False when it was disabled, or when the query matched no keywords (e.g. a non-Latin query), in which case the ranking is pure similarity.
+          example: true
+        keywordMatches:
+          type: integer
+          description: How many assets the keyword lane matched. Mostly useful for explaining a surprising ranking.
+          example: 21
+        total:
+          type: integer
+          description: Number of results before `limit` is applied. Use this for a result count.
+          example: 269
+        considered:
+          type: integer
+          description: Assets eligible for this search at all. A `total` of 0 with a large `considered` means nothing matched; a small `considered` means the filters excluded almost everything.
+          example: 521
+        results:
+          type: array
+          items:
+            type: object
+            properties:
+              slug:
+                type: string
+                example: sofa_01
+              score:
+                type: number
+                example: 0.5648
+    assets:
+      type: object
+      properties:
+        assetID:
+          type: object
+          description: Asset data, see schema for `asset`.
+      example:
+        aerial_asphalt_01:
+          name: Aerial Asphalt 01
+          description: Free 8K aerial-view texture of cracked, weathered asphalt, tileable for outdoor road/pavement surfaces.
+          type: 1
+          date_published: 1597061145
+          download_count: 33151
+          files_hash: f55493e46c51f95b51bb5952d0b38d634937f3b2
+          authors:
+            Rob Tuytel: All
+          categories:
+            - asphalt
+            - outdoor
+            - floor
+            - road
+            - man made
+          category: Asphalt & Bitumen/Asphalt/Cracked Asphalt
+          category_id: ae6df066-2cbf-5772-9092-3cd86ed6394e
+          tags:
+            - road
+            - flat
+            - cracked
+          attributes:
+            surface_use: floor
+            origin: man_made
+            setting: outdoor
+            condition:
+              - weathered
+          max_resolution:
+            - 8192
+            - 8192
+          dimensions:
+            - 30000
+            - 30000
+          thumbnail_url: https://cdn.polyhaven.com/asset_img/thumbs/aerial_asphalt_01.png?width=256&height=256&format=webp&v=7f3a91c4
+        aerial_beach_01:
+          name: Aerial Beach 01
+          description: Free 16K aerial-view texture of wavy coastal beach sand, tileable for natural outdoor terrain.
+          type: 1
+          date_published: 1601489165
+          download_count: 33556
+          files_hash: 8746a9a941bebe5743d0a710e11cb91beb225ca6
+          authors:
+            Rob Tuytel: All
+          categories:
+            - terrain
+            - sand
+            - outdoor
+            - natural
+          category: Ground & Terrain/Sand/Beach & Coastal Sand
+          category_id: 2bed9a9d-8f5f-5f1f-815c-e33cfa63bf69
+          tags:
+            - beach
+            - wavy
+            - costal
+            - ocean
+            - seaside
+          attributes:
+            surface_use: ground
+            origin: natural
+            setting: outdoor
+            aerial: true
+          max_resolution:
+            - 16384
+            - 16384
+          dimensions:
+            - 30000
+            - 30000
+          thumbnail_url: https://cdn.polyhaven.com/asset_img/thumbs/aerial_beach_01.png?width=256&height=256&format=webp&v=7f3a91c4
+    asset:
+      type: object
+      description: All asset types include this data.
+      properties:
+        name:
+          type: string
+          description: The human-readable/display name.
+          example: Horse Statue 01
+        description:
+          type: string
+          description: A short, human-written summary of the asset.
+          example: Free 8K model of a decorative white porcelain horse statue with a fancy, ornamental sculpted finish.
+        type:
+          type: integer
+          description: The asset type. HDRIs = 0, textures = 1, models =2.
+          example: 2
+        date_published:
+          type: integer
+          description: The epoch timestamp in seconds of when this asset was published.
+          example: 1634860800
+        download_count:
+          type: integer
+          description: The number of times this asset was downloaded. Useful for sorting by popularity.
+          example: 12345
+        files_hash:
+          type: string
+          description: A SHA1 hash of the files object (from the /files endpoint), which will change whenever the files are updated.
+          example: 8746a9a941bebe5743d0a710e11cb91beb225ca6
+        img_version:
+          type: string
+          description: >-
+            A short hash of the asset's images, which changes whenever any of them are re-uploaded.
+            It is already appended to thumbnail_url as a `v` parameter; use it yourself when
+            building URLs for the asset's other images (asset_img/primary, /renders, /backplates
+            and /map_previews) so a replaced image is not served from a stale cache. May be absent
+            on assets compiled before it existed, in which case omit the parameter.
+          example: 7f3a91c4
+        authors:
+          type: object
+          description: Who created this asset, and what they did.
+          properties:
+            $authorID:
+              type: string
+              description: Credit
+          example:
+            Rico Cilliers: All
+        donated:
+          nullable: true
+          type: boolean
+          description: Whether or not this asset was donated free of charge to us.
+          example: false
+        categories:
+          type: array
+          deprecated: true
+          description: 'Deprecated: a legacy string array of pseudo-tag categories. Replaced by `category`/`category_id`, a single taxonomy path per asset. Still returned for backwards compatibility alongside the new fields; both systems run in parallel with no removal date currently planned for this one.'
+          example:
+            - props
+            - decorative
+        category:
+          type: string
+          description: This asset's location in Poly Haven's single-path category taxonomy (one path per asset, comparable to a Blender asset browser catalog). This is the actively-maintained replacement for the deprecated `categories` array.
+          example: Leisure/Sports/Balls
+        category_id:
+          type: string
+          description: A stable UUID identifying the `category` path above. Prefer this over the `category` string if you need to reliably detect category renames/moves.
+          example: ba452b18-0442-5d9d-b0b6-2f001f956f6d
+        tags:
+          type: array
+          description: A string array of tags for this asset to help with search matches.
+          example:
+            - decorative
+            - horse
+            - statue
+            - figurine
+            - porcelain
+            - animal
+            - sculpture
+            - white
+            - fancy
+        attributes:
+          type: object
+          description: A map of structured facets for this asset. Available keys vary by asset type (see the `hdri`/`texture`/`model` schemas below); any facet that's false/empty/unset is omitted entirely rather than included with a falsy value, so treat a missing key as its default (e.g. a missing `rigged` means "not rigged").
+          example:
+            condition: worn
+            material:
+              - leather
+              - rubber
+        max_resolution:
+          type: array
+          description: The highest texture resolution available for this asset, in pixels.
+          example:
+            - 8192
+            - 8192
+        thumbnail_url:
+          type: string
+          description: The URL of the preview image thumbnail for this asset. Provided in .webp format.
+          example: https://cdn.polyhaven.com/asset_img/thumbs/ArmChair_01.png?width=256&height=256&format=webp&v=7f3a91c4
+    hdri:
+      type: object
+      description: HDRI data, extends `asset` schema.
+      properties:
+        name:
+          type: string
+          description: The human-readable/display name.
+          example: Abandoned Factory Canteen 01
+        description:
+          type: string
+          description: A short, human-written summary of the asset.
+          example: Free, unclipped 16K HDRI of an abandoned factory canteen, indoor fluorescent lighting with backplates included.
+        type:
+          type: integer
+          description: The asset type, for HDRIs this is 0.
+          example: 0
+        date_published:
+          type: integer
+          description: The epoch timestamp in seconds of when this asset was published.
+          example: 1600725600
+        download_count:
+          type: integer
+          description: The number of times this asset was downloaded. Useful for sorting by popularity.
+          example: 12345
+        files_hash:
+          type: string
+          description: A SHA1 hash of the files object (from the /files endpoint), which will change whenever the files are updated.
+          example: 8746a9a941bebe5743d0a710e11cb91beb225ca6
+        img_version:
+          type: string
+          description: >-
+            A short hash of the asset's images, which changes whenever any of them are re-uploaded.
+            It is already appended to thumbnail_url as a `v` parameter; use it yourself when
+            building URLs for the asset's other images (asset_img/primary, /renders, /backplates
+            and /map_previews) so a replaced image is not served from a stale cache. May be absent
+            on assets compiled before it existed, in which case omit the parameter.
+          example: 7f3a91c4
+        authors:
+          type: object
+          description: Who created this asset, and what they did.
+          properties:
+            $authorID:
+              type: string
+              description: Credit
+          example:
+            Sergej Majboroda: All
+        donated:
+          nullable: true
+          type: boolean
+          description: Whether or not this asset was donated free of charge to us.
+          example: false
+        categories:
+          type: array
+          deprecated: true
+          description: 'Deprecated: a legacy string array of pseudo-tag categories. Replaced by `category`/`category_id`, a single taxonomy path per asset. Still returned for backwards compatibility alongside the new fields; both systems run in parallel with no removal date currently planned for this one.'
+          example:
+            - indoor
+            - urban
+            - low contrast
+            - natural light
+        category:
+          type: string
+          description: This asset's location in Poly Haven's single-path category taxonomy. HDRIs are organized by environment, except edited pure-sky variants (ground removed), which have no location and are grouped under the top-level `Pure Skies` category instead. This is the actively-maintained replacement for the deprecated `categories` array.
+          example: Streets & Town/Rooftops & Balconies/City Rooftops
+        category_id:
+          type: string
+          description: A stable UUID identifying the `category` path above. Prefer this over the `category` string if you need to reliably detect category renames/moves.
+          example: 8133f881-e55d-5c6c-a360-99dbf7204ee5
+        tags:
+          type: array
+          description: A string array of tags for this asset to help with search matches.
+          example:
+            - hall
+            - abandoned
+            - fluorescent
+            - industrial
+            - backplates
+        attributes:
+          type: object
+          description: A map of structured HDRI facets. Any facet that's false/empty/unset is omitted entirely rather than included with a falsy value, so treat a missing key as its default.
+          properties:
+            time_of_day:
+              type: string
+              description: Time of day this HDRI was captured.
+              example: dusk
+            weather:
+              type: string
+              description: Weather/cloud conditions.
+              example: partly_cloudy
+            light_type:
+              type: string
+              description: Whether the lighting is natural or artificial.
+              example: natural
+            contrast:
+              type: string
+              description: Relative dynamic range/contrast of the scene.
+              example: low
+            season:
+              type: string
+              description: Season the HDRI was captured in, if applicable/known.
+              example: winter
+            environment:
+              type: string
+              enum: [indoor, outdoor]
+              description: Where the HDRI was captured. Studio shots are `indoor`. Replaces the former boolean `indoor`.
+              example: outdoor
+            sky_view:
+              type: string
+              enum: [open, obstructed]
+              description: How much open sky is visible. Omitted entirely for indoor captures, where it does not apply. Replaces the former boolean `open_sky`.
+              example: open
+            backplates:
+              type: boolean
+              description: Whether backplates are available for this HDRI. Always written together with the top-level `backplates` field below, so the two cannot disagree.
+          example:
+            time_of_day: dusk
+            weather: partly_cloudy
+            light_type: natural
+            contrast: low
+            environment: outdoor
+            sky_view: open
+        max_resolution:
+          type: array
+          description: The highest resolution available for this HDRI, in pixels.
+          example:
+            - 16384
+            - 8192
+        thumbnail_url:
+          type: string
+          description: The URL of the preview image thumbnail for this asset. Provided in .webp format.
+          example: https://cdn.polyhaven.com/asset_img/thumbs/abandoned_factory_canteen_01.png?width=256&height=256&format=webp&v=7f3a91c4
+        whitebalance:
+          nullable: true
+          type: integer
+          description: The whitebalance in Kelvin that this HDRI and any included backplates were shot at. May not be present for all assets.
+          example: 5450
+        backplates:
+          nullable: true
+          type: boolean
+          description: Whether there are backplates available for this HDRI.
+          example: true
+        evs_cap:
+          type: integer
+          description: The number of exposure brackets captured when shooting this HDRI. I.e. the difference between the brightest and darkest shots, an indication of dynamic range.
+          example: 15
+        coords:
+          nullable: true
+          type: array
+          description: Decimal lat/lon GPS coordinates.
+          example: [50.995194, 35.105417]
+        date_taken:
+          type: integer
+          deprecated: true
+          description: Legacy (untrustworthy) epoch timestamp of when this HDRI was taken. Timezone issues caused this data to be generally unused and inaccurate. May be solved in future but don't depend on it!
+          example: 1591789620
+    texture:
+      type: object
+      description: Texture data, extends `asset` schema.
+      properties:
+        name:
+          type: string
+          description: The human-readable/display name.
+          example: Brick Floor 003
+        description:
+          type: string
+          description: A short, human-written summary of the asset.
+          example: Free 8K texture of a clean, tileable red brick floor for indoor/outdoor use.
+        type:
+          type: integer
+          description: The asset type, for textures this is 1.
+          example: 1
+        date_published:
+          type: integer
+          description: The epoch timestamp in seconds of when this asset was published.
+          example: 1618385199
+        download_count:
+          type: integer
+          description: The number of times this asset was downloaded. Useful for sorting by popularity.
+          example: 12345
+        files_hash:
+          type: string
+          description: A SHA1 hash of the files object (from the /files endpoint), which will change whenever the files are updated.
+          example: 8746a9a941bebe5743d0a710e11cb91beb225ca6
+        img_version:
+          type: string
+          description: >-
+            A short hash of the asset's images, which changes whenever any of them are re-uploaded.
+            It is already appended to thumbnail_url as a `v` parameter; use it yourself when
+            building URLs for the asset's other images (asset_img/primary, /renders, /backplates
+            and /map_previews) so a replaced image is not served from a stale cache. May be absent
+            on assets compiled before it existed, in which case omit the parameter.
+          example: 7f3a91c4
+        authors:
+          type: object
+          description: Who created this asset, and what they did.
+          properties:
+            $authorID:
+              type: string
+              description: Credit
+          example:
+            Dimitrios Savva: Photography
+            Rob Tuytel: Processing
+        donated:
+          nullable: true
+          type: boolean
+          description: Whether or not this asset was donated free of charge to us.
+          example: false
+        categories:
+          type: array
+          deprecated: true
+          description: 'Deprecated: a legacy string array of pseudo-tag categories. Replaced by `category`/`category_id`, a single taxonomy path per asset. Still returned for backwards compatibility alongside the new fields; both systems run in parallel with no removal date currently planned for this one.'
+          example:
+            - floor
+            - brick
+            - man made
+            - outdoor
+            - indoor
+            - clean
+            - wall
+        category:
+          type: string
+          description: This asset's location in Poly Haven's single-path category taxonomy. Textures are organized material-first. This is the actively-maintained replacement for the deprecated `categories` array.
+          example: Concrete/Cast Walls & Floors/Exposed Aggregate
+        category_id:
+          type: string
+          description: A stable UUID identifying the `category` path above. Prefer this over the `category` string if you need to reliably detect category renames/moves.
+          example: 70d3bf8f-46b0-5250-a419-61cbf068f448
+        tags:
+          type: array
+          description: A string array of tags for this asset to help with search matches.
+          example:
+            - brown
+            - floor
+            - pavement
+        attributes:
+          type: object
+          description: A map of structured texture facets. Any facet that's false/empty/unset is omitted entirely rather than included with a falsy value, so treat a missing key as its default.
+          properties:
+            surface_use:
+              type: string
+              description: The typical surface this texture is used for.
+              example: floor
+            origin:
+              type: string
+              enum: [man_made, natural]
+              description: Whether the material is manufactured/built/worked or naturally occurring. Replaces the former boolean `man_made`.
+              example: man_made
+            setting:
+              type: string
+              enum: [indoor, outdoor, either]
+              description: Where the material is typically found. `either` for materials equally at home in both. Omitted when it has not been assessed. Replaces the former boolean `outdoor`.
+              example: outdoor
+            condition:
+              type: array
+              description: Wear/condition descriptors for this texture. An empty/absent array means pristine.
+              example:
+                - weathered
+                - worn
+            aerial:
+              type: boolean
+              description: Captured from the air by drone, so at a far larger scale than a ground scan.
+          example:
+            surface_use: floor
+            origin: man_made
+            setting: outdoor
+            condition:
+              - weathered
+              - worn
+        max_resolution:
+          type: array
+          description: The highest resolution available for this texture, in pixels.
+          example:
+            - 8192
+            - 8192
+        thumbnail_url:
+          type: string
+          description: The URL of the preview image thumbnail for this asset. Provided in .webp format.
+          example: https://cdn.polyhaven.com/asset_img/thumbs/brick_floor_003.png?width=256&height=256&format=webp&v=7f3a91c4
+        dimensions:
+          type: array
+          description: An array with the dimensions of this asset on each axis in millimeters.
+          example: [2000, 2000]
+    model:
+      type: object
+      description: Model data, extends `asset` schema.
+      properties:
+        name:
+          type: string
+          description: The human-readable/display name.
+          example: Horse Statue 01
+        description:
+          type: string
+          description: A short, human-written summary of the asset.
+          example: Free 8K model of a decorative white porcelain horse statue with a fancy, ornamental sculpted finish.
+        type:
+          type: integer
+          description: The asset type, for models this is 2.
+          example: 2
+        date_published:
+          type: integer
+          description: The epoch timestamp in seconds of when this asset was published.
+          example: 1634860800
+        download_count:
+          type: integer
+          description: The number of times this asset was downloaded. Useful for sorting by popularity.
+          example: 12345
+        files_hash:
+          type: string
+          description: A SHA1 hash of the files object (from the /files endpoint), which will change whenever the files are updated.
+          example: 8746a9a941bebe5743d0a710e11cb91beb225ca6
+        img_version:
+          type: string
+          description: >-
+            A short hash of the asset's images, which changes whenever any of them are re-uploaded.
+            It is already appended to thumbnail_url as a `v` parameter; use it yourself when
+            building URLs for the asset's other images (asset_img/primary, /renders, /backplates
+            and /map_previews) so a replaced image is not served from a stale cache. May be absent
+            on assets compiled before it existed, in which case omit the parameter.
+          example: 7f3a91c4
+        authors:
+          type: object
+          description: Who created this asset, and what they did.
+          properties:
+            $authorID:
+              type: string
+              description: Credit
+          example:
+            Rico Cilliers: All
+        donated:
+          nullable: true
+          type: boolean
+          description: Whether or not this asset was donated free of charge to us.
+          example: false
+        categories:
+          type: array
+          deprecated: true
+          description: 'Deprecated: a legacy string array of pseudo-tag categories. Replaced by `category`/`category_id`, a single taxonomy path per asset. Still returned for backwards compatibility alongside the new fields; both systems run in parallel with no removal date currently planned for this one.'
+          example:
+            - props
+            - decorative
+        category:
+          type: string
+          description: This asset's location in Poly Haven's single-path category taxonomy. Models are organized by object kind/function. This is the actively-maintained replacement for the deprecated `categories` array.
+          example: Leisure/Sports/Balls
+        category_id:
+          type: string
+          description: A stable UUID identifying the `category` path above. Prefer this over the `category` string if you need to reliably detect category renames/moves.
+          example: ba452b18-0442-5d9d-b0b6-2f001f956f6d
+        tags:
+          type: array
+          description: A string array of tags for this asset to help with search matches.
+          example:
+            - decorative
+            - horse
+            - statue
+            - figurine
+            - porcelain
+            - animal
+            - sculpture
+            - white
+            - fancy
+        attributes:
+          type: object
+          description: A map of structured model facets. Any facet that's false/empty/unset is omitted entirely rather than included with a falsy value, so treat a missing key as its default (e.g. a missing `rigged` means the model is not rigged).
+          properties:
+            condition:
+              type: array
+              description: Wear/condition descriptors for this model. An empty/absent array means pristine. Was a single string before the attribute rework.
+              example:
+                - worn
+            material:
+              type: array
+              description: The primary material(s) this model is made of.
+              example:
+                - leather
+                - rubber
+            rigged:
+              type: boolean
+              description: Whether this model includes a rig/armature.
+            lods:
+              type: boolean
+              description: Whether this model ships with level-of-detail variants. Always written together with the top-level `lods` field, so the two cannot disagree.
+            geonodes:
+              type: boolean
+              description: Whether this model includes a geometry-nodes setup. Always written together with the top-level `geonodes` field.
+          example:
+            condition:
+              - worn
+            material:
+              - leather
+              - rubber
+        max_resolution:
+          type: array
+          description: The highest texture resolution available for this model, in pixels.
+          example:
+            - 8192
+            - 8192
+        lods:
+          type: boolean
+          deprecated: true
+          description: >-
+            (optional) Whether this model ships with level-of-detail variants. Previously documented
+            as an array of triangle counts, which no code ever wrote. Mirrors `attributes.lods`,
+            which is where new clients should read it.
+          example: true
+        geonodes:
+          type: boolean
+          deprecated: true
+          description: >-
+            (optional) Whether this model includes a geometry-nodes setup. Mirrors
+            `attributes.geonodes`, which is where new clients should read it.
+          example: true
+        thumbnail_url:
+          type: string
+          description: The URL of the preview image thumbnail for this asset. Provided in .webp format.
+          example: https://cdn.polyhaven.com/asset_img/thumbs/horse_statue_01.png?width=256&height=256&format=webp&v=7f3a91c4
+    hdriFiles:
+      type: object
+      properties:
+        hdri:
+          type: object
+          properties:
+            $resolution:
+              type: object
+              properties:
+                $format:
+                  $ref: '#/components/schemas/file'
+        backplates:
+          nullable: true
+          type: object
+          properties:
+            $image:
+              type: object
+              properties:
+                $format:
+                  $ref: '#/components/schemas/file'
+        colorchart:
+          $ref: '#/components/schemas/optionalFile'
+        tonemapped:
+          $ref: '#/components/schemas/optionalFile'
+    textureFiles:
+      type: object
+      properties:
+        blend:
+          type: object
+          properties:
+            $resolution:
+              type: object
+              properties:
+                blend:
+                  $ref: '#/components/schemas/fileWithIncludes'
+        gltf:
+          type: object
+          properties:
+            $resolution:
+              type: object
+              properties:
+                gltf:
+                  $ref: '#/components/schemas/fileWithIncludes'
+        mtlx:
+          type: object
+          properties:
+            $resolution:
+              type: object
+              properties:
+                mtlx:
+                  $ref: '#/components/schemas/fileWithIncludes'
+        $map:
+          type: object
+          properties:
+            $resolution:
+              type: object
+              properties:
+                $format:
+                  $ref: '#/components/schemas/file'
+    modelFiles:
+      type: object
+      properties:
+        blend:
+          type: object
+          properties:
+            $resolution:
+              type: object
+              properties:
+                blend:
+                  $ref: '#/components/schemas/fileWithIncludes'
+        gltf:
+          type: object
+          properties:
+            $resolution:
+              type: object
+              properties:
+                gltf:
+                  $ref: '#/components/schemas/fileWithIncludes'
+        fbx:
+          type: object
+          properties:
+            $resolution:
+              type: object
+              properties:
+                fbx:
+                  $ref: '#/components/schemas/fileWithIncludes'
+        usd:
+          type: object
+          properties:
+            $resolution:
+              type: object
+              properties:
+                usd:
+                  $ref: '#/components/schemas/fileWithIncludes'
+        $map:
+          type: object
+          properties:
+            $resolution:
+              type: object
+              properties:
+                $format:
+                  $ref: '#/components/schemas/file'
+    file:
+      type: object
+      properties:
+        url:
+          type: string
+          description: Direct URL to download this file.
+        md5:
+          type: string
+          description: MD5 checksum for verifying file integrity.
+        size:
+          type: integer
+          description: Size of the file in bytes.
+    optionalFile:
+      type: object
+      properties:
+        url:
+          type: string
+          description: Direct URL to download this file.
+        md5:
+          type: string
+          description: MD5 checksum for verifying file integrity.
+        size:
+          type: integer
+          description: Size of the file in bytes.
+    fileWithIncludes:
+      type: object
+      properties:
+        url:
+          type: string
+          description: Direct URL to download this file.
+        md5:
+          type: string
+          description: MD5 checksum for verifying file integrity.
+        size:
+          type: integer
+          description: Size of the file in bytes.
+        include:
+          type: object
+          description: A list of files that this file depends on and should be included when downloaded, typically textures that the model/texture uses.
+          properties:
+            $path:
+              $ref: '#/components/schemas/file'
+    author:
+      type: object
+      properties:
+        name:
+          type: string
+          description: The author's full name, which may be different from the ID.
+          example: Jorge Camacho
+        link:
+          nullable: true
+          type: string
+          description: The author's preferred link to their portfolio.
+          example: https://www.artstation.com/jorgeandrespinedac
+        email:
+          nullable: true
+          type: string
+          description: Email address of the author.
+          example: foo@bar.com
+        donate:
+          nullable: true
+          type: string
+          description: Donation info of this author. May be a link to a donation page, or an email prefixed with `paypal:` to indicate a PayPal address.
+          example: paypal:foo@bar.com

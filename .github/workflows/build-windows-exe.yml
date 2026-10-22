@@ -1,0 +1,131 @@
+# Construit METROPOLIS-<version>-win64.exe (portable) a chaque push du jeu,
+# puis l'attache a la Release GitHub correspondant a CETTE version.
+#
+# v0.5.1 : le tag n'est plus code en dur. Il est lu dans desktop/package.json,
+# sinon tous les builds atterrissaient dans la release v0.3.0 (d'ou le
+# METROPOLIS-0.4.0-win64.exe visible dans la release 0.3.0, et aucune archive
+# dans la 0.5.0).
+name: Build Windows EXE
+
+on:
+  push:
+    branches: ['arena/**', 'main']
+    paths:
+      - 'web/**'
+      - 'tools/**'
+      - 'desktop/**'
+      - '.github/workflows/build-windows-exe.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write # requis pour creer la Release et y deposer le .exe
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+
+      - name: Installer les dependances du jeu
+        shell: bash
+        run: cd web && npm ci
+
+      # La porte qualite complete tourne AVANT l'empaquetage : si un test
+      # echoue (par exemple un crash au premier rendu), aucun .exe casse n'est
+      # publie. C'est exactement ce qui manquait en v0.5.0.
+      # assets.generated.js est un artefact genere (gitignore) : sans lui, tous
+      # les imports de assets.js echouent avec ERR_MODULE_NOT_FOUND, ce qui a
+      # fait echouer la premiere execution des tests sur Windows.
+      - name: Generer les modeles 3D embarques
+        shell: bash
+        run: node tools/build_assets.mjs
+
+      - name: Tests (ville, integration, rendu, bundle)
+        shell: bash
+        run: |
+          FAILED=0
+          : > ci-test-report.txt
+          for t in smoke_test test_features test_integration test_v04 test_v05 test_v06 test_v07 check_assets test_render; do
+            echo "== $t" | tee -a ci-test-report.txt
+            if node "tools/$t.mjs" > "out_$t.log" 2>&1; then
+              tail -n 2 "out_$t.log"
+            else
+              FAILED=1
+              echo "::error title=$t::HEAD $(head -n 18 out_$t.log | tr '\n' ' ' | head -c 400) ||TAIL $(tail -n 5 out_$t.log | tr '\n' ' ' | head -c 400)"
+            fi
+          done
+          cat out_*.log >> ci-test-report.txt 2>/dev/null || true
+          echo "== build"
+          node tools/build_single_file.mjs > out_build.log 2>&1 || FAILED=1
+          echo "== test_bundle"
+          if node tools/test_bundle.mjs > out_bundle.log 2>&1; then
+            tail -n 2 out_bundle.log
+          else
+            FAILED=1
+            echo "::error title=test_bundle::HEAD $(head -n 6 out_bundle.log | tr '\n' ' ' | head -c 400) ||TAIL $(tail -n 6 out_bundle.log | tr '\n' ' ' | head -c 300)"
+          fi
+          # En cas d'echec, on pousse le rapport sur une branche dediee : les
+          # logs Actions ne sont pas telechargeables depuis l'environnement de
+          # developpement (hote bloque), un fichier versionne l'est.
+          if [ $FAILED -ne 0 ]; then
+            head -c 60000 ci-test-report.txt > ci-test-report.tmp && mv ci-test-report.tmp ci-test-report.txt
+            git config user.name "metropolis-ci"
+            git config user.email "ci@localhost"
+            git checkout -B ci-report
+            git add -f ci-test-report.txt
+            git commit -m "ci: rapport de test (echec)" || true
+            git push -f origin ci-report || true
+          fi
+          exit $FAILED
+
+      - name: Installer les dependances desktop
+        shell: bash
+        run: cd desktop && npm install
+
+      - name: Construire l'executable portable
+        shell: bash
+        run: cd desktop && npm run dist:win
+
+      - name: Verifier la presence du binaire
+        shell: bash
+        run: ls -la desktop/release/*.exe
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: METROPOLIS-windows-x64
+          path: desktop/release/*.exe
+          retention-days: 90
+
+      - name: Publier la Release de la version courante
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          VERSION=$(node -p "require('./desktop/package.json').version")
+          TAG="v$VERSION"
+          echo "Version publiee : $TAG"
+          NOTES="Executable Windows portable (x64), sans installation, 100% hors-ligne."
+          NOTES="$NOTES RENDU CINEMATIQUE : occlusion ambiante (GTAO), bloom des phares et enseignes, sortie ACES."
+          NOTES="$NOTES Paliers reglables (Ultra/Haut/Moyen/Bas/Desactive) dans Reglages > Graphismes, avec repli automatique."
+          NOTES="$NOTES CIEL ATMOSPHERIQUE : dome shader (degrade zenith/horizon + brume), halo solaire, 64 nuages sprites."
+          NOTES="$NOTES RUE VIVANTE : ~1100 objets instancies (poubelles, bornes d'incendie, bacs a fleurs, abribus),"
+          NOTES="$NOTES chateaux d'eau et antennes sur les toits, balises allumees la nuit."
+          NOTES="$NOTES HABITACLES : planche de bord, volant, sieges, retroviseur - visibles a travers les vitres et en vue 1re personne."
+          NOTES="$NOTES OMBRES DE CONTACT sous les vehicules, les 44 PNJ et le joueur ; foule variee (teinte + taille)."
+          NOTES="$NOTES Version HTML equivalente : release/METROPOLIS-$VERSION.html dans le depot."
+          if ! gh release view "$TAG" --repo "$REPO" > /dev/null 2>&1; then
+            # --target : sans lui, `gh release create` crée le tag sur la
+            # branche par défaut. Le tag v0.6.0 a dû être déplacé à la main
+            # (il pointait sur main, sans le code de la version).
+            gh release create "$TAG" --repo "$REPO" --target "$GITHUB_SHA" \
+              --title "METROPOLIS $TAG - Rendu cinematique, ciel et rue vivante" \
+              --notes "$NOTES"
+          fi
+          gh release upload "$TAG" desktop/release/*.exe --repo "$REPO" --clobber
+          echo "Release : https://github.com/$REPO/releases/tag/$TAG"

@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1240" height="760" viewBox="0 0 1240 760" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+<rect width="100%" height="100%" fill="#0b0f14"/>
+<text x="40" y="56" fill="#f2f6fa" font-size="30" font-weight="700">METROPOLIS — architecture Unreal Engine 5.5</text>
+<text x="40" y="84" fill="#8fa3b5" font-size="15">Migration V3 depuis le prototype WebGL v0.9.0 · 21 classes C++ · Structure, UHT et configs vérifiés statiquement</text>
+<text x="40" y="120" fill="#1b6ca8" font-size="14" font-weight="700" letter-spacing="1.2">ÉTAT & SIMULATION (sous-systèmes de monde)</text>
+<rect x="40" y="136" width="268" height="76" rx="10" fill="#121a22" stroke="#1b6ca8" stroke-width="1.6"/>
+<text x="56" y="166" fill="#ffffff" font-size="15" font-weight="600">RoadNetworkSubsystem</text>
+<text x="56" y="190" fill="#93a7b8" font-size="12.5">graphe routier · A* · feux</text>
+<rect x="330" y="136" width="268" height="76" rx="10" fill="#121a22" stroke="#1b6ca8" stroke-width="1.6"/>
+<text x="346" y="166" fill="#ffffff" font-size="15" font-weight="600">GPSSubsystem</text>
+<text x="346" y="190" fill="#93a7b8" font-size="12.5">itinéraire · manœuvres</text>
+<rect x="620" y="136" width="268" height="76" rx="10" fill="#121a22" stroke="#1b6ca8" stroke-width="1.6"/>
+<text x="636" y="166" fill="#ffffff" font-size="15" font-weight="600">WeatherSubsystem</text>
+<text x="636" y="190" fill="#93a7b8" font-size="12.5">météo · mouillage · jour/nuit</text>
+<rect x="910" y="136" width="268" height="76" rx="10" fill="#121a22" stroke="#1b6ca8" stroke-width="1.6"/>
+<text x="926" y="166" fill="#ffffff" font-size="15" font-weight="600">MissionSubsystem</text>
+<text x="926" y="190" fill="#93a7b8" font-size="12.5">étapes · chrono</text>
+<text x="40" y="246" fill="#2e8b57" font-size="14" font-weight="700" letter-spacing="1.2">ACTEURS & RENDU</text>
+<rect x="40" y="262" width="268" height="76" rx="10" fill="#121a22" stroke="#2e8b57" stroke-width="1.6"/>
+<text x="56" y="292" fill="#ffffff" font-size="15" font-weight="600">MetropolisVehicle</text>
+<text x="56" y="316" fill="#93a7b8" font-size="12.5">Chaos · surfaces · caméras</text>
+<rect x="330" y="262" width="268" height="76" rx="10" fill="#121a22" stroke="#2e8b57" stroke-width="1.6"/>
+<text x="346" y="292" fill="#ffffff" font-size="15" font-weight="600">MetropolisCharacter</text>
+<text x="346" y="316" fill="#93a7b8" font-size="12.5">pas 36 cm · interaction</text>
+<rect x="620" y="262" width="268" height="76" rx="10" fill="#121a22" stroke="#2e8b57" stroke-width="1.6"/>
+<text x="636" y="292" fill="#ffffff" font-size="15" font-weight="600">StreetSurfaceActor</text>
+<text x="636" y="316" fill="#93a7b8" font-size="12.5">trottoirs biseautés 15/16/18 cm</text>
+<rect x="910" y="262" width="268" height="76" rx="10" fill="#121a22" stroke="#2e8b57" stroke-width="1.6"/>
+<text x="926" y="292" fill="#ffffff" font-size="15" font-weight="600">TrafficAIController</text>
+<text x="926" y="316" fill="#93a7b8" font-size="12.5">6 profils · feux</text>
+<text x="40" y="372" fill="#8a5a00" font-size="14" font-weight="700" letter-spacing="1.2">INTERFACE & PERSISTANCE</text>
+<rect x="40" y="388" width="268" height="76" rx="10" fill="#121a22" stroke="#8a5a00" stroke-width="1.6"/>
+<text x="56" y="418" fill="#ffffff" font-size="15" font-weight="600">MetropolisHUD</text>
+<text x="56" y="442" fill="#93a7b8" font-size="12.5">vitesse · GPS · météo · FPS</text>
+<rect x="330" y="388" width="268" height="76" rx="10" fill="#121a22" stroke="#8a5a00" stroke-width="1.6"/>
+<text x="346" y="418" fill="#ffffff" font-size="15" font-weight="600">PlayerController</text>
+<text x="346" y="442" fill="#93a7b8" font-size="12.5">sauvegarde · pause</text>
+<rect x="620" y="388" width="268" height="76" rx="10" fill="#121a22" stroke="#8a5a00" stroke-width="1.6"/>
+<text x="636" y="418" fill="#ffffff" font-size="15" font-weight="600">GraphicsSettings</text>
+<text x="636" y="442" fill="#93a7b8" font-size="12.5">profils · DLSS/TSR</text>
+<rect x="910" y="388" width="268" height="76" rx="10" fill="#121a22" stroke="#8a5a00" stroke-width="1.6"/>
+<text x="926" y="418" fill="#ffffff" font-size="15" font-weight="600">MetropolisSaveGame</text>
+<text x="926" y="442" fill="#93a7b8" font-size="12.5">slot v3</text>
+<rect x="40" y="516" width="1160" height="112" rx="12" fill="#101821" stroke="#3c4a57" stroke-dasharray="6 5"/>
+<text x="60" y="544" fill="#c9d6e2" font-size="14" font-weight="700">PIPELINE POLY HAVEN (CC0) — exécutable hors éditeur</text>
+<rect x="60" y="562" width="196" height="48" rx="8" fill="#16222c" stroke="#2f4a5e"/>
+<text x="72" y="581" fill="#e8f1f7" font-size="12.5" font-weight="600">polyhaven_api.py</text>
+<text x="72" y="598" fill="#8ba1b3" font-size="11">client OpenAPI</text>
+<path d="M258 670 h14" stroke="#4d6b80" stroke-width="1.6" marker-end="url(#a)"/>
+<rect x="274" y="562" width="196" height="48" rx="8" fill="#16222c" stroke="#2f4a5e"/>
+<text x="286" y="581" fill="#e8f1f7" font-size="12.5" font-weight="600">polyhaven_sync.py</text>
+<text x="286" y="598" fill="#8ba1b3" font-size="11">sélection + MD5</text>
+<path d="M472 670 h14" stroke="#4d6b80" stroke-width="1.6" marker-end="url(#a)"/>
+<rect x="488" y="562" width="196" height="48" rx="8" fill="#16222c" stroke="#2f4a5e"/>
+<text x="500" y="581" fill="#e8f1f7" font-size="12.5" font-weight="600">Content/PolyHaven/raw</text>
+<text x="500" y="598" fill="#8ba1b3" font-size="11">téléchargements</text>
+<path d="M686 670 h14" stroke="#4d6b80" stroke-width="1.6" marker-end="url(#a)"/>
+<rect x="702" y="562" width="196" height="48" rx="8" fill="#16222c" stroke="#2f4a5e"/>
+<text x="714" y="581" fill="#e8f1f7" font-size="12.5" font-weight="600">polyhaven_import_ue.py</text>
+<text x="714" y="598" fill="#8ba1b3" font-size="11">Nanite · LOD · Physical Mat.</text>
+<path d="M900 670 h14" stroke="#4d6b80" stroke-width="1.6" marker-end="url(#a)"/>
+<rect x="916" y="562" width="196" height="48" rx="8" fill="#16222c" stroke="#2f4a5e"/>
+<text x="928" y="581" fill="#e8f1f7" font-size="12.5" font-weight="600">verify_project.py</text>
+<text x="928" y="598" fill="#8ba1b3" font-size="11">251 contrôles</text>
+<rect x="40" y="646" width="1160" height="58" rx="12" fill="#1d1408" stroke="#b9770e"/>
+<text x="60" y="670" fill="#ffcf7d" font-size="13.5" font-weight="700">EXIGE L'ÉDITEUR (non produit ici, aucune contrefaçon) :</text>
+<text x="60" y="690" fill="#d8b98a" font-size="12.5">carte L_DemoDistrict · Blueprints · M_Master_PBR · Niagara pluie · assets Enhanced Input · cook Windows</text>
+<defs><marker id="a" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="#4d6b80"/></marker></defs>
+</svg>

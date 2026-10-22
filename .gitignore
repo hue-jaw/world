@@ -1,0 +1,32 @@
+# Prototype web
+web/node_modules/
+
+# Unreal Engine : fichiers generes (jamais versionnes)
+unreal/Binaries/
+unreal/Intermediate/
+unreal/Saved/
+unreal/DerivedDataCache/
+unreal/.vs/
+unreal/*.sln
+unreal/*.vcxproj*
+unreal/*.suo
+unreal/*.user
+unreal/Plugins/**/Binaries/
+unreal/Plugins/**/Intermediate/
+
+# Divers
+.DS_Store
+*.log
+
+# Artefacts generes (rebuild : node tools/build_single_file.mjs)
+METROPOLIS.html
+desktop/index.html
+desktop/release/
+desktop/node_modules/
+
+# Généré par tools/build_assets.mjs (modèles encodés en base64)
+web/src/assets.generated.js
+
+# Aperçus de développement : la planche de contrôle est versionnée, les
+# textures pleine résolution (plusieurs Mo) sont régénérables à la demande.
+previews/texture_*.png

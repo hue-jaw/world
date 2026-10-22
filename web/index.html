@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>METROPOLIS — Vertical Slice</title>
+<link rel="stylesheet" href="style.css">
+<script type="importmap">
+{ "imports": { "three": "./node_modules/three/build/three.module.js", "three/addons/": "./node_modules/three/examples/jsm/" } }
+</script>
+</head>
+<body>
+
+<div id="app"></div>
+
+<!-- ============ CINÉMATIQUE (lettrage + texte) ============ -->
+<div id="cinema">
+  <div class="cine-bar top"></div>
+  <div class="cine-bar bottom"></div>
+  <div id="cinema-title"></div>
+  <div id="cinema-text"></div>
+  <div id="cinema-hint">Espace / clic pour passer</div>
+</div>
+
+<!-- ============ ÉCRAN TITRE ============ -->
+<div id="title-screen">
+  <div class="title-box">
+    <div class="title-badge">OPEN-WORLD · VERTICAL SLICE v0.9.0</div>
+    <h1>METROPOLIS</h1>
+    <p class="title-sub">Un quartier vivant : trafic IA, PNJ à routines, cycle jour/nuit, météo dynamique, police et missions de livraison.</p>
+    <div class="controls-grid">
+      <div><kbd>Z Q S D</kbd><span>Se déplacer / conduire</span></div>
+      <div><kbd>Souris (glisser)</kbd><span>Caméra</span></div>
+      <div><kbd>F</kbd><span>Entrer / sortir d'un véhicule</span></div>
+      <div><kbd>Maj</kbd><span>Sprinter · <kbd>Espace</kbd> Sauter / frein à main</span></div>
+      <div><kbd>H</kbd><span>Klaxon · <kbd>L</kbd> Phares · <kbd>M</kbd> Son</span></div>
+      <div><kbd>T</kbd><span>Avancer le temps · <kbd>G</kbd> Changer la météo</span></div>
+      <div><kbd>C</kbd><span>Caméra auto / libre · <kbd>B</kbd> Boutique &amp; garage</span></div>
+      <div><kbd>E</kbd><span>Monter au toit d'un immeuble acheté</span></div>
+      <div><kbd>J</kbd><span>Emploi — petites annonces et embauche</span></div>
+      <div><kbd>V</kbd><span>Vue habitacle ↔ 3e personne · <kbd>R</kbd> recentrer la caméra</span></div>
+      <div><kbd>Échap</kbd><span>Menu : graphismes, contrôles, manette, debug</span></div>
+      <div><kbd>🎮</kbd><span>Manette : <kbd>L3</kbd> sprint · <kbd>R3</kbd> recentrer · <kbd>START</kbd> menu</span></div>
+    </div>
+    <button id="btn-play">▶ &nbsp;ENTRER DANS METROPOLIS</button>
+    <div class="title-mission">🚚 Mission : récupérez le colis au marqueur <b class="gold">jaune</b>, livrez-le au marqueur <b class="cyan">bleu</b> avant la fin du chrono. Évitez la police !</div>
+    <div id="save-note" class="title-save"></div>
+  </div>
+</div>
+
+<!-- ============ HUD ============ -->
+<div id="hud" class="hidden">
+  <!-- horloge + météo -->
+  <div id="hud-clock" class="panel">
+    <div id="clock-time">09:00</div>
+    <div id="clock-weather">☀️ Dégagé</div>
+    <div id="clock-street" title="Rue actuelle">—</div>
+  </div>
+
+  <!-- boussole -->
+  <div id="compass"><div id="compass-inner"></div><div id="compass-marker">▼</div></div>
+
+  <!-- argent + police + santé -->
+  <div id="hud-status" class="panel">
+    <div id="hud-money">$ 0</div>
+    <div id="hud-wanted">☆☆☆</div>
+    <div id="hud-deliveries">📦 0 livraison</div>
+    <div id="health-wrap" title="Santé"><div id="health-bar"></div></div>
+    <div id="hud-gamepad">🎮 non détectée</div>
+  </div>
+
+  <!-- objectif mission -->
+  <div id="objective" class="panel hidden">
+    <div id="objective-title">📦 Récupérez le colis</div>
+    <div id="objective-info"><span id="objective-dist">0 m</span><span id="objective-timer"></span></div>
+  </div>
+
+  <!-- guidage GPS temps réel (prochaine manœuvre, distance, temps) -->
+  <div id="gps-panel" class="panel hidden">
+    <div id="gps-icon">⬆</div>
+    <div id="gps-body">
+      <div id="gps-turn">Suivez l’itinéraire</div>
+      <div id="gps-meta"><b id="gps-dist">—</b><span id="gps-eta"></span><span id="gps-left"></span></div>
+    </div>
+  </div>
+
+  <!-- emploi / petites annonces -->
+  <div id="jobs" class="hidden">
+    <div class="jobs-box">
+      <div class="jobs-head">
+        <h2>🧾 Emploi</h2>
+        <div id="jobs-status">Sans emploi</div>
+        <button id="jobs-close" title="Fermer (J / Échap)">✕</button>
+      </div>
+      <div id="jobs-body"></div>
+    </div>
+  </div>
+
+  <!-- minimap -->
+  <div id="minimap-wrap" class="panel"><canvas id="minimap" width="190" height="190"></canvas><div id="minimap-north">N</div></div>
+
+  <!-- compteur vitesse -->
+  <div id="speedo" class="panel hidden"><div id="speedo-value">0</div><div id="speedo-unit">km/h</div><div id="speedo-gear">D</div></div>
+
+  <!-- prompt interaction -->
+  <div id="prompt" class="hidden"><kbd>F</kbd><span id="prompt-text">Entrer dans le véhicule</span></div>
+
+  <!-- notifications -->
+  <div id="toasts"></div>
+  <div id="gps-hint">🧭 Suivez les flèches au sol et sur la mini-carte</div>
+
+  <!-- barre d'outils démo (systèmes vivants) -->
+  <div id="toolbar" class="panel">
+    <span class="tb-label">Météo</span>
+    <button data-weather="Clear" title="Dégagé">☀️</button>
+    <button data-weather="Cloudy" title="Nuageux">⛅</button>
+    <button data-weather="Rain" title="Pluie">🌧️</button>
+    <button data-weather="Storm" title="Orage">⛈️</button>
+    <button data-weather="Fog" title="Brouillard">🌫️</button>
+    <span class="tb-sep"></span>
+    <button id="tb-time" title="Avancer de 3 heures (T)">🕐 +3h</button>
+    <button id="tb-speed" title="Vitesse du temps">⏩ ×1</button>
+    <button id="tb-sound" title="Son on/off (M)">🔊</button>
+    <button id="tb-debug" title="Panneau de debug (F1)">🛠️</button>
+    <button id="tb-settings" title="Menu et réglages (Échap)">⚙️ Réglages</button>
+    <span class="tb-sep"></span>
+    <button id="tb-shop" title="Boutique / garage (B)">🏪 Boutique</button>
+    <button id="tb-jobs" title="Emploi / petites annonces (J)">🧾 Emploi</button>
+  </div>
+
+  <!-- ============ BOUTIQUE / GARAGE / LOGEMENTS ============ -->
+  <div id="shop" class="hidden">
+    <div class="shop-box">
+      <div class="shop-head">
+        <h2>🏪 METROPOLIS — Boutique</h2>
+        <div class="shop-money">Solde : <b id="shop-balance">$ 0</b></div>
+        <button id="shop-close" title="Fermer (B / Échap)">✕</button>
+      </div>
+      <div class="shop-tabs">
+        <button data-tab="houses" class="active">🏠 Logements</button>
+        <button data-tab="cars">🚗 Véhicules</button>
+        <button data-tab="garage">🔧 Garage</button>
+        <button data-tab="upgrades">⚙️ Améliorations</button>
+      </div>
+      <div id="shop-body" class="shop-body"></div>
+      <div class="shop-foot">Gagnez de l'argent avec les missions · <kbd>B</kbd> fermer</div>
+    </div>
+  </div>
+
+  <!-- écran de blessure / réanimation -->
+  <div id="downed" class="hidden"><div class="busted-text">VOUS ÊTES BLESSÉ</div><div id="downed-sub">Transport à l'hôpital…</div></div>
+
+  <!-- debug -->
+  <div id="debug-panel" class="panel hidden"></div>
+
+  <!-- écran interpellation -->
+  <div id="busted" class="hidden"><div class="busted-text">INTERPELLÉ</div><div id="busted-sub">Amende : $150</div></div>
+  <div id="vignette"></div>
+</div>
+
+<div id="loading">Chargement de Metropolis…</div>
+
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>

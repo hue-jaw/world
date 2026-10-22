@@ -1,0 +1,17 @@
+# Artefacts générés par Unreal (jamais versionnés)
+Binaries/
+Build/
+DerivedDataCache/
+Intermediate/
+Saved/
+*.sln
+*.suo
+*.opensdf
+*.sdf
+.vs/
+
+# Assets Poly Haven téléchargés : volumineux, reproductibles via Scripts/polyhaven_sync.py
+Content/PolyHaven/raw/
+
+# Rapports générés par l'éditeur
+Scripts/polyhaven_import_report.json
