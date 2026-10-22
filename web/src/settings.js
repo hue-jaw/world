@@ -40,7 +40,7 @@ export const LIGHT_LEVELS = {
 const DEFAULTS = {
   version: VERSION,
   mode: 'story',          // 'story' | 'free'
-  shadows: 'high',
+  shadows: 'ultra',      // v0.8 : 2048 px + PCFSoft, portée 120 m
   lights: 'high',
   rtx: false,
   cinema: true,          // étalonnage + vignette (filtre CSS, coût nul)

@@ -184,7 +184,7 @@ check('roundtrip sauvegarde versionnée', () => {
   const d = SaveSystem.load();
   assert.equal(d.economy.money, 432);
   assert.equal(d.economy.ownedCars[0].type, 'Moto');
-  assert.equal(d.v, 2);
+  assert.equal(d.v, 3);   // v3 : + histoire et emploi (v0.8)
   SaveSystem.clear();
   assert.equal(SaveSystem.load(), null);
 });

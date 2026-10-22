@@ -17,6 +17,15 @@ export const rightOf = (d) => ({ x: -d.z, z: d.x });     // perpendiculaire (voi
 
 const blockCenter = (i) => (i - (N - 1) / 2) * P;
 
+/**
+ * Hauteur maximale que le joueur peut ENJAMBER sans sauter (v0.8).
+ * Un trottoir fait 15 cm, un terre-plein 16 cm, un îlot de giratoire 18 cm :
+ * tous franchissables. Un tronc d'arbre (2,9 m), un lampadaire ou un mur ne
+ * le sont pas. Avant, le terre-plein et l'îlot bloquaient comme un mur alors
+ * qu'ils étaient plus bas que le trottoir — c'était l'incohérence signalée.
+ */
+export const STEP_UP = 0.36;
+
 // ---- Métropole étendue (8,19 km) ----
 // La grille du cœur (routes tous les 64 m, à partir de -224) est prolongée
 // mathématiquement sur 128 blocs par axe. Seuls les blocs proches du joueur
@@ -1000,12 +1009,20 @@ export class City {
       }
     }
   }
-  // Repousse un cercle (x,z,r) hors des AABB. Retourne la position corrigée.
-  collide(x, z, r, y = 0) {
+  /**
+   * Repousse un cercle (x,z,r) hors des AABB. Retourne la position corrigée.
+   * @param {number} y     hauteur des pieds
+   * @param {number} step  hauteur franchissable sans sauter (0 = aucune) :
+   *   tout obstacle dont le sommet est sous `y + step` est ignoré — on passe
+   *   dessus, comme un trottoir. Les véhicules passent 0 (un terre-plein de
+   *   16 cm reste un obstacle pour eux), les piétons et le joueur STEP_UP.
+   */
+  collide(x, z, r, y = 0, step = 0) {
     const list = this.colliderGrid.get(Math.floor(x / P) + ',' + Math.floor(z / P));
     let soft = false;
     if (list) for (const c of list) {
-      if (c.h && y > 0.6 && c.h <= y + 0.6) continue;   // on marche sur le toit
+      if (c.h && c.h <= y + step) continue;             // plus bas que la marche
+      if (c.h && y > 0.6 && c.h <= y + 0.6) continue;   // toit sous les pieds
       const nx = clamp(x, c.minX, c.maxX), nz = clamp(z, c.minZ, c.maxZ);
       let dx = x - nx, dz = z - nz; const d2 = dx * dx + dz * dz;
       if (d2 < r * r) {
@@ -1025,22 +1042,37 @@ export class City {
     const o = this.collide(x, z, r);
     return Math.abs(o.x - x) > 0.001 || Math.abs(o.z - z) > 0.001;
   }
-  groundY(x, z, y = 0) { // hauteur trottoir, puis éventuel toit sous les pieds
+  /**
+   * Hauteur d'appui sous les pieds : trottoir, terre-plein, îlot, planter,
+   * ou toit d'immeuble. Un obstacle n'est un appui que si son sommet est à
+   * moins de STEP_UP au-dessus des pieds (on « monte dessus ») ou si l'on est
+   * déjà au-dessus (toit).
+   */
+  groundY(x, z, y = 0) {
     const lx = ((x % P) + P) % P, lz = ((z % P) + P) % P;
     const inX = lx > (P - PLAT) / 2 && lx < (P + PLAT) / 2;
     const inZ = lz > (P - PLAT) / 2 && lz < (P + PLAT) / 2;
     let ground = (inX && inZ && Math.abs(x) < WORLD_HALF + 4 && Math.abs(z) < WORLD_HALF + 4) ? 0.15 : 0;
-    if (y > 0.6) {
-      // Toits : on peut se déplacer au sommet d'un bâtiment (brief : monter
-      // en haut des immeubles, surtout ceux achetés).
-      const list = this.colliderGrid.get(Math.floor(x / P) + ',' + Math.floor(z / P));
-      if (list) for (const c of list) {
-        if (!c.h || c.h > y + 1.2) continue;
-        if (x < c.minX || x > c.maxX || z < c.minZ || z > c.maxZ) continue;
-        if (c.h > ground) ground = c.h;
-      }
+    const list = this.colliderGrid.get(Math.floor(x / P) + ',' + Math.floor(z / P));
+    if (list) for (const c of list) {
+      if (!c.h) continue;
+      if (c.h > y + STEP_UP) continue;              // trop haut : mur, tronc, immeuble
+      if (x < c.minX || x > c.maxX || z < c.minZ || z > c.maxZ) continue;
+      if (c.h > ground) ground = c.h;
     }
     return ground;
+  }
+
+  /** Hauteur d'un obstacle bas à cet endroit (0 si aucun), pour l'UI/tests. */
+  propHeightAt(x, z) {
+    const list = this.colliderGrid.get(Math.floor(x / P) + ',' + Math.floor(z / P));
+    let best = 0;
+    if (list) for (const c of list) {
+      if (!c.h || c.h > 1.2) continue;
+      if (x < c.minX || x > c.maxX || z < c.minZ || z > c.maxZ) continue;
+      if (c.h > best) best = c.h;
+    }
+    return best;
   }
 
   /** Point au sommet d'un bâtiment (accès toit / héliport). */

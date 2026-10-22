@@ -8,6 +8,7 @@ import * as THREE from 'three';
 import Assets from './assets.js';
 import GamepadInput from './input.js';
 import { ECONOMY } from './core.js';
+import { STEP_UP } from './city.js';
 import { Bus, clamp, damp, angleDamp } from './core.js';
 
 // Coin de trottoir a l'intersection (32,32) : garanti sans batiment.
@@ -151,7 +152,7 @@ export class Player {
       const r = { x: Math.cos(v.heading), z: -Math.sin(v.heading) };
       let ex = v.pos.x - r.x * (v.spec.wid / 2 + 0.9);
       let ez = v.pos.z - r.z * (v.spec.wid / 2 + 0.9);
-      const c = ctx.city.collide(ex, ez, 0.4);
+      const c = ctx.city.collide(ex, ez, 0.4, 0, STEP_UP);
       this.pos.set(c.x, ctx.city.groundY(c.x, c.z), c.z);
       this.heading = v.heading;
       this.vehicle = null;
@@ -278,7 +279,8 @@ export class Player {
       }
       this.pos.y = ground; this.vy = 0; this.grounded = true;
     }
-    const c = ctx.city.collide(this.pos.x, this.pos.z, 0.38, this.pos.y);
+    // STEP_UP : le joueur enjambe trottoirs, terre-pleins, îlots et bordures.
+    const c = ctx.city.collide(this.pos.x, this.pos.z, 0.38, this.pos.y, STEP_UP);
     this.pos.x = c.x; this.pos.z = c.z;
     this.group.rotation.y = this.heading;
     // animation de marche

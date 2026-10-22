@@ -21,6 +21,8 @@ import Economy from './economy.js';
 import GPSSystem from './gps.js';
 import { Settings } from './settings.js';
 import MenuSystem from './menu.js';
+import StorySystem from './story.js';
+import JobSystem from './jobs.js';
 
 window.addEventListener('error', (e) => {
   const el = document.getElementById('loading');
@@ -40,7 +42,10 @@ renderer.setSize(innerWidth, innerHeight);
 // Qualité adaptative (brief §21) : on vise 60 fps en ajustant la
 // résolution interne, jamais la simulation. Mesure toutes les 2,5 s.
 // ---------------------------------------------------------------
-const MAX_DPR = Math.min(devicePixelRatio || 1, 1.5);
+// v0.8 : plafond relevé à 2 (rendu net sur écran Retina / 1440p). La
+// résolution adaptative redescend toute seule si les fps passent sous 48 :
+// on gagne en netteté sans jamais sacrifier la fluidité (mesure en continu).
+const MAX_DPR = Math.min(devicePixelRatio || 1, 2);
 let renderScale = MAX_DPR;
 renderer.setPixelRatio(renderScale);
 renderer.shadowMap.enabled = true;
@@ -93,10 +98,12 @@ const peds = new PedestrianSystem(scene, city);
 const missions = new MissionSystem(scene, city);
 const economy = new Economy(city);
 const gps = new GPSSystem(scene, city);
+const story = new StorySystem({ camera, scene, city, player });
+const jobs = new JobSystem(city, economy);
 
 const ctx = {
   // renderer exposé : les réglages graphiques (ombres, exposition) en ont besoin
-  scene, city, env, traffic, peds, player, missions, audio, economy, gps, renderer,
+  scene, city, env, traffic, peds, player, missions, audio, economy, gps, renderer, story, jobs,
   ui: null,
   menu: null,
   paused: false,
@@ -112,6 +119,8 @@ const ctx = {
     x: Math.round(player.pos.x), z: Math.round(player.pos.z),
     health: Math.round(player.health),
     economy: economy.serialize(),
+    story: story.serialize(),
+    jobs: jobs.serialize(),
   }),
 };
 // L'argent est une seule source de vérité : economy.money.
@@ -123,6 +132,8 @@ Object.defineProperty(ctx, 'money', {
 
 // restauration de partie (avant création de l'UI : pas de toasts parasites)
 if (save) {
+  if (save.story) story.restore(save.story);
+  if (save.jobs) jobs.restore(save.jobs);
   if (save.economy) economy.restore(save.economy);
   else if (Number.isFinite(save.money)) economy.money = save.money;
   player.health = Number.isFinite(save.health) ? save.health : player.maxHealth;
@@ -159,6 +170,17 @@ settings.apply(ctx);
 settings.applyWorld(ctx);
 // le menu pilote aussi le mode Histoire / Libre
 menu._applyMode();
+// Mode Histoire : AUCUN emploi au départ. Le joueur doit accepter une petite
+// annonce (J) puis postuler. En mode Libre, les courses tournent comme avant.
+if (settings.get('mode') !== 'free') {
+  missions.mode = 'off';
+  if (jobs.hasJob) missions.mode = 'job';
+  // nouvelle partie en Histoire : on démarre avec 35 $ et zéro emploi
+  if (!save) economy.money = ECONOMY.startStoryMoney;
+  story._enterChapter(story.chapter, ctx);
+  ui.setStoryGoal(story.chapterData);
+}
+Bus.on('storyChapter', ({ data }) => ui.setStoryGoal(data));
 if (settings.get('camView') === 'first') player.camMode = 'first';
 player.autoCam = settings.get('autoCam') !== false;
 player.gamepad.deadzone = settings.get('deadzone') ?? 0.18;
@@ -275,8 +297,15 @@ window.addEventListener('keydown', (e) => {
 // --- boutique (B) : une seule fenêtre, ouverte/fermée au clavier ou manette ---
 window.addEventListener('keydown', (e) => {
   if (e.code === 'KeyB' && !e.repeat) { ui.toggleShop(ctx); }
+  if (e.code === 'KeyJ' && !e.repeat && started && !story.playing) { ui.toggleJobs(ctx); }
   if (e.code === 'Escape' && ui.shopOpen) ui.closeShop();
+  if (e.code === 'Escape' && ui.jobsOpen) ui.closeJobs();
+  // pendant une cinématique, Échap / Espace / Entrée passent la scène
+  if (story.playing && (e.code === 'Escape' || e.code === 'Space' || e.code === 'Enter')) {
+    e.preventDefault(); story.skip();
+  }
 });
+document.getElementById('cinema')?.addEventListener('click', () => story.skip());
 document.getElementById('tb-settings')?.addEventListener('click', () => menu.toggle());
 
 // ------------------------------- Raccourcis ---------------------------------
@@ -305,6 +334,11 @@ document.getElementById('btn-play').addEventListener('click', () => {
   document.getElementById('title-screen').style.display = 'none';
   document.getElementById('hud').classList.remove('hidden');
   started = true;
+  // Mode Histoire : cinématique d'ouverture au premier lancement seulement.
+  if (settings.get('mode') !== 'free' && !story.introSeen && !save) {
+    story.startIntro(ctx);
+    return;
+  }
   // snap caméra derrière le joueur (pas de travelling parasite depuis le titre)
   const p = player.pos;
   player._camPos.set(p.x + Math.sin(player.camYaw) * 7, 3.4, p.z + Math.cos(player.camYaw) * 7);
@@ -352,6 +386,10 @@ function loop() {
   }
 
   if (started && !ctx.paused) {
+    story.update(dt, ctx);
+    jobs.update(dt, ctx);
+  }
+  if (started && !ctx.paused && !story.playing) {
     player.update(dt, ctx);
     // accès toit : prioritaire quand on est devant un immeuble possédé
     if (!player.vehicle) {

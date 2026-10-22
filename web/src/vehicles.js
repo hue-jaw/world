@@ -19,7 +19,13 @@ export function setVehicleMaterialBoost(v) { MAT_BOOST = Math.max(0.2, v || 1); 
 export const headlightGlowMat = new THREE.MeshBasicMaterial({
   color: 0xffe9b0, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false });
 
-const glassMat = new THREE.MeshStandardMaterial({ color: 0x16202c, roughness: 0.15, metalness: 0.85 });
+// Vitrage : peu métallique, très lisse, réfléchissant — c'est le revêtement
+// qui « vend » une carrosserie. Un métal sombre donnait un aspect plastique.
+const glassMat = new THREE.MeshPhysicalMaterial({
+  color: 0x0d1620, roughness: 0.06, metalness: 0.12,
+  transparent: true, opacity: 0.62, envMapIntensity: 2.4,
+  clearcoat: 1, clearcoatRoughness: 0.04,
+});
 const tireMat = new THREE.MeshStandardMaterial({ color: 0x14161a, roughness: 0.95 });
 const hubMat = new THREE.MeshStandardMaterial({ color: 0xb9c0c9, roughness: 0.35, metalness: 0.7 });
 
@@ -227,6 +233,106 @@ function buildMotoMesh(t) {
   return { group: g, wheels, frontPivots, headMat, brakeMat, beacon: null, wheelR, paint, driverFig, glass: null, isMoto: true };
 }
 
+/**
+ * Ombre de contact portée au sol (v0.8).
+ *
+ * Pourquoi : sans elle, un véhicule « flotte » — l'ombre projetée par le soleil
+ * est trop douce ou absente selon l'heure. Une simple tache sombre dégradée
+ * sous la caisse colle la voiture à la route, pour un quad et une texture
+ * partagée. C'est le détail qui change le plus la perception de qualité.
+ */
+let _contactTex = null, _contactMat = null;
+function contactShadow(wid, len) {
+  // Harnais sans DOM (tests d'assets) : pas de canvas => pas d'ombre, mais
+  // surtout pas d'exception au milieu de la construction d'un véhicule.
+  if (typeof document === 'undefined' || typeof document.createElement !== 'function') return null;
+  if (!_contactTex) {
+    const c = document.createElement('canvas');
+    c.width = c.height = 128;
+    const g = c.getContext('2d');
+    if (g) {
+      const grad = g.createRadialGradient(64, 64, 8, 64, 64, 64);
+      grad.addColorStop(0, 'rgba(0,0,0,0.55)');
+      grad.addColorStop(0.55, 'rgba(0,0,0,0.28)');
+      grad.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = grad; g.fillRect(0, 0, 128, 128);
+    }
+    _contactTex = new THREE.CanvasTexture(c);
+    _contactMat = new THREE.MeshBasicMaterial({
+      map: _contactTex, transparent: true, depthWrite: false,
+      blending: THREE.NormalBlending, opacity: 0.85, fog: true,
+    });
+  }
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(wid * 1.5, len * 1.18), _contactMat);
+  m.rotation.x = -Math.PI / 2;
+  m.position.y = 0.035;
+  m.renderOrder = 0;
+  return m;
+}
+
+/**
+ * Détails de carrosserie ajoutés par-dessus le modèle 3D (v0.8) : rétroviseurs,
+ * plaques, échappements, bas de caisse, becquet. Les modèles CC0 sont des
+ * volumes simples ; ce sont ces pièces qui donnent l'échelle et la lisibilité.
+ */
+function addCarDetails(g, t, bodyY, paint) {
+  const chrome = new THREE.MeshStandardMaterial({ color: 0xc8ced6, metalness: 0.95, roughness: 0.22 });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x14171c, metalness: 0.5, roughness: 0.45 });
+  const plateMat = new THREE.MeshStandardMaterial({ color: 0xe8ebef, roughness: 0.5, metalness: 0.1 });
+
+  // --- rétroviseurs ---
+  for (const sx of [-1, 1]) {
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.05, 0.07), dark);
+    arm.position.set(sx * (t.wid / 2 + 0.05), bodyY + 0.36, t.len * 0.22);
+    const mir = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.12, 0.20), paint);
+    mir.position.set(sx * (t.wid / 2 + 0.15), bodyY + 0.38, t.len * 0.21);
+    g.add(arm, mir);
+  }
+  // --- plaques d'immatriculation ---
+  const plateF = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.11, 0.02), plateMat);
+  plateF.position.set(0, bodyY - 0.18, t.len / 2 + 0.015);
+  const plateR = plateF.clone();
+  plateR.position.z = -t.len / 2 - 0.015;
+  g.add(plateF, plateR);
+  // --- bas de caisse (donne une « ceinture » au volume) ---
+  for (const sx of [-1, 1]) {
+    const skirt = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.14, t.len * 0.62), dark);
+    skirt.position.set(sx * (t.wid / 2 - 0.01), bodyY - 0.30, -t.len * 0.02);
+    g.add(skirt);
+  }
+  // --- échappements ---
+  const pipes = t.sport ? 2 : 1;
+  for (let i = 0; i < pipes; i++) {
+    const off = pipes === 1 ? 0.28 : (i === 0 ? 0.22 : 0.40);
+    const ex = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.062, 0.16, 10), chrome);
+    ex.rotation.x = Math.PI / 2;
+    ex.position.set(t.wid * off, bodyY - 0.32, -t.len / 2 - 0.04);
+    g.add(ex);
+  }
+  // --- becquet (sportives) ---
+  if (t.sport) {
+    const wing = new THREE.Mesh(new THREE.BoxGeometry(t.wid * 0.86, 0.05, 0.26), paint);
+    wing.position.set(0, bodyY + 0.62, -t.len * 0.42);
+    for (const sx of [-1, 1]) {
+      const stay = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.22, 0.10), dark);
+      stay.position.set(sx * t.wid * 0.34, bodyY + 0.51, -t.len * 0.42);
+      g.add(stay);
+    }
+    g.add(wing);
+  }
+  // --- barres de toit (SUV / utilitaire) ---
+  if (t.van || typeName_isVanLike(t)) {
+    for (const sx of [-1, 1]) {
+      const rail = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, t.len * 0.42), dark);
+      rail.position.set(sx * t.wid * 0.36, bodyY + (t.cabinH || 0.7) * 0.98, -t.len * 0.05);
+      g.add(rail);
+    }
+  }
+}
+
+/** SUV/Utilitaire partagent le besoin de barres de toit. */
+function typeName_isVanLike(t) { return t.suv === true; }
+
 function buildVehicleMesh(typeName) {
   const t = VEHICLE_TYPES[typeName];
   if (t.moto) return buildMotoMesh(t);
@@ -290,6 +396,12 @@ function buildVehicleMesh(typeName) {
   bodyY = wheelR + t.bodyH / 2 - 0.06;
   roofY = bodyY + t.bodyH / 2 + t.cabinH;
   }
+
+  // Détails de carrosserie (rétros, plaques, échappements, becquet)
+  addCarDetails(g, t, bodyY, paint);
+  // Ombre de contact : la voiture « pose » sur la route au lieu de flotter
+  const cs = contactShadow(t.wid, t.len);
+  if (cs) g.add(cs);
 
   // Phares / feux stop (matériaux individuels : intensité par véhicule)
   const headMat = new THREE.MeshStandardMaterial({ color: 0xfff6d8, emissive: 0xffedb5, emissiveIntensity: 0.25 });
@@ -898,6 +1010,19 @@ export class TrafficSystem {
     this.vehicles.push(v);
     return v;
   }
+  /**
+   * Véhicule de société (van du job) : garé, gratuit, mais il n'appartient
+   * pas au joueur — `clearOwned()` ne doit pas le supprimer quand l'économie
+   * change (achat de voiture, agrandissement du garage…).
+   */
+  spawnCompany(type, x, z, heading) {
+    const v = new Vehicle(this.scene, type);
+    v.placeAt(x, z, heading);
+    v.parked = true; v.owned = false; v.company = true;
+    this.vehicles.push(v);
+    return v;
+  }
+
   clearOwned() {
     for (const v of this.vehicles) {
       if (!v.owned) continue;

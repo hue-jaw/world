@@ -261,3 +261,51 @@ kbd { background:#1c2432; border:1px solid #3a465e; border-bottom-width:3px; bor
   max-width:190px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 #clock-street.oneway { color:#ffcf6b; }
 #clock-street.oneway::after { content:' ⇢'; }
+
+
+/* ============================================================================
+   CINÉMATIQUES (v0.8) — lettrage 2.39:1 + texte, sans vidéo
+   ========================================================================== */
+#hud.cine { opacity:0; transition:opacity .4s ease; pointer-events:none; }
+#cinema { position:fixed; inset:0; z-index:60; pointer-events:none; opacity:0;
+  transition:opacity .45s ease; }
+#cinema.on { opacity:1; pointer-events:auto; }
+.cine-bar { position:absolute; left:0; right:0; height:11vh; background:#000;
+  transition:transform .5s ease; }
+.cine-bar.top { top:0; transform:translateY(-100%); }
+.cine-bar.bottom { bottom:0; transform:translateY(100%); }
+#cinema.on .cine-bar.top, #cinema.on .cine-bar.bottom { transform:translateY(0); }
+#cinema-title { position:absolute; top:22vh; left:0; right:0; text-align:center;
+  font-size:clamp(28px,4.4vw,64px); font-weight:900; letter-spacing:.16em;
+  color:#eaf2ff; text-shadow:0 6px 40px rgba(0,0,0,.85); }
+#cinema-text { position:absolute; left:50%; bottom:16vh; transform:translateX(-50%);
+  width:min(760px,84vw); text-align:center; font-size:clamp(14px,1.5vw,19px);
+  line-height:1.55; color:#dce8f8; text-shadow:0 2px 18px #000;
+  animation:fadeUp .9s ease both; }
+@keyframes fadeUp { from { opacity:0; transform:translate(-50%,10px); } to { opacity:1; transform:translate(-50%,0); } }
+#cinema-hint { position:absolute; right:22px; bottom:calc(11vh + 14px); font-size:11px;
+  letter-spacing:.14em; text-transform:uppercase; color:rgba(220,232,248,.45); }
+
+/* ============================================================================
+   PANNEAU EMPLOI (v0.8)
+   ========================================================================== */
+#jobs { position:absolute; inset:0; z-index:41; display:flex; align-items:center; justify-content:center;
+  background:rgba(4,8,14,.72); backdrop-filter:blur(7px); }
+#jobs.hidden { display:none; }
+.jobs-box { width:min(620px,92vw); background:linear-gradient(180deg,rgba(18,26,39,.99),rgba(8,13,20,.995));
+  border:1px solid #2b4162; border-radius:16px; box-shadow:0 30px 80px rgba(0,0,0,.6); overflow:hidden; }
+.jobs-head { display:flex; align-items:center; gap:14px; padding:14px 18px; border-bottom:1px solid #22304a; }
+.jobs-head h2 { margin:0; font-size:16px; letter-spacing:.04em; }
+#jobs-status { flex:1; text-align:right; font-size:12px; color:#9fe6ff; }
+#jobs-close { background:none; border:1px solid #2b4162; color:#cfe0f5; border-radius:8px;
+  width:30px; height:30px; cursor:pointer; }
+#jobs-body { padding:14px 18px 18px; display:flex; flex-direction:column; gap:10px; max-height:62vh; overflow:auto; }
+.jobs-item { display:flex; align-items:center; gap:12px; padding:12px 14px; border-radius:11px;
+  background:rgba(255,255,255,.035); border:1px solid rgba(90,130,190,.22); }
+.jobs-item .ji-main { flex:1; min-width:0; }
+.jobs-item .ji-title { font-size:13.5px; font-weight:700; }
+.jobs-item .ji-sub { font-size:11.5px; color:#93a8c4; margin-top:2px; }
+.jobs-item button { padding:9px 15px; border-radius:9px; border:none; cursor:pointer; font-weight:800;
+  background:linear-gradient(180deg,#3f9bff,#2569e0); color:#fff; }
+.jobs-item button:disabled { background:#28374d; color:#6c7f99; cursor:not-allowed; }
+.jobs-item.done { opacity:.62; }

@@ -8,6 +8,7 @@
 import * as THREE from 'three';
 import { CFG, Bus, clamp, damp, angleDamp, pick, rand, randRange, randInt, chance } from './core.js';
 import Assets from './assets.js';
+import { STEP_UP } from './city.js';
 
 const FIRST = ['Léa', 'Hugo', 'Emma', 'Louis', 'Jade', 'Noah', 'Chloé', 'Lucas', 'Mia', 'Adam', 'Sarah', 'Karim', 'Inès', 'Théo', 'Awa', 'Kenji', 'Maria', 'Ivan', 'Zoé', 'Mehdi'];
 const LAST = ['Martin', 'Bernard', 'Dubois', 'Moreau', 'Laurent', 'Diallo', 'Garcia', 'Rossi', 'Kowalski', 'Tanaka', 'Haddad', 'Petit', 'Leroy', 'Fontaine'];
@@ -193,7 +194,7 @@ class Citizen {
     const sep = ctx.peds.separationFor(this);
     this.pos.x += (moveX * this.speed + sep.x) * dt;
     this.pos.z += (moveZ * this.speed + sep.z) * dt;
-    const c = this.city.collide(this.pos.x, this.pos.z, 0.32);
+    const c = this.city.collide(this.pos.x, this.pos.z, 0.32, 0, STEP_UP);
     this.pos.x = c.x; this.pos.z = c.z;
     this.pos.y = damp(this.pos.y, this.city.groundY(this.pos.x, this.pos.z), 14, dt);
     this.group.rotation.y = this.heading;

@@ -5,7 +5,9 @@
 // Équivalent UE5 : USaveGame sérialisé + migration par version.
 // ============================================================================
 const KEY = 'metropolis_save';
-const VERSION = 2;   // v2 : économie, santé, logements
+// v3 : + histoire (chapitre, intro vue, embauche) et emploi (gigs, salaire).
+// Une sauvegarde v2 est refusée proprement (nouvelle partie), pas corrompue.
+const VERSION = 3;
 
 export const SaveSystem = {
   load() {

@@ -110,23 +110,22 @@ jobs:
           VERSION=$(node -p "require('./desktop/package.json').version")
           TAG="v$VERSION"
           echo "Version publiee : $TAG"
-          NOTES="Executable Windows portable (x64), sans installation."
-          NOTES="$NOTES Facades a UV metriques (plus de textures etirees), arbres textures et non bloquants,"
-          NOTES="$NOTES Double-cliquez : le jeu demarre dans sa propre fenetre (F11 plein ecran, F12 outils)."
-          NOTES="$NOTES Cette version corrige les facades etirees (UV metriques + tuile d'etages), les PNJ dans les arbres,"
-          NOTES="$NOTES le saut A/Espace (buffer d'appui), L3, et la saccade + le joueur invisible en moto."
-          NOTES="$NOTES GPS TEMPS REEL : fleches, ruban et mini-carte repartent de votre position ; itineraire recalcule"
-          NOTES="$NOTES automatiquement des que vous quittez la route, avec prochaine manoeuvre, distance restante et temps."
-          NOTES="$NOTES Ville variable et asymetrique, rues nommees, sens uniques, giratoires,"
-          NOTES="$NOTES canal avec 129 ponts, autoroute peripherique, police, drift, GPS au sol,"
-          NOTES="$NOTES economie, manettes Xbox/PS, 100% hors-ligne, aucun droit administrateur."
+          NOTES="Executable Windows portable (x64), sans installation, 100% hors-ligne."
+          NOTES="$NOTES HISTOIRE : plus de livreur impose des la premiere seconde. Vous arrivez sans emploi ni toit,"
+          NOTES="$NOTES avec 35 $ : petites annonces a la tache (J), puis 3 annonces + 150 $ de caution pour postuler,"
+          NOTES="$NOTES salaire quotidien de 140 $, courses payees 1,6x, et achat d'un logement pour finir chapitre III."
+          NOTES="$NOTES CINEMATIQUE d'ouverture de 34 s en 5 plans, passable d'un clic."
+          NOTES="$NOTES TERRE-PLEINS ET ILOTS franchissables a pied (marche max 0,36 m) ; troncs, murs et immeubles"
+          NOTES="$NOTES restent infranchissables et les vehicules n'y montent pas."
+          NOTES="$NOTES CARROSSERIE : ombre de contact, vitrage physique translucide, retroviseurs, plaques, bas de caisse,"
+          NOTES="$NOTES echappements, becquet, barres de toit. Rendu : resolution jusqu'a x2, ombres 2048 px PCFSoft."
           NOTES="$NOTES Version HTML equivalente : release/METROPOLIS-$VERSION.html dans le depot."
           if ! gh release view "$TAG" --repo "$REPO" > /dev/null 2>&1; then
             # --target : sans lui, `gh release create` crée le tag sur la
             # branche par défaut. Le tag v0.6.0 a dû être déplacé à la main
             # (il pointait sur main, sans le code de la version).
             gh release create "$TAG" --repo "$REPO" --target "$GITHUB_SHA" \
-              --title "METROPOLIS $TAG - GPS temps reel : fleches et itineraire recalcules" \
+              --title "METROPOLIS $TAG - Histoire, emploi et franchissement" \
               --notes "$NOTES"
           fi
           gh release upload "$TAG" desktop/release/*.exe --repo "$REPO" --clobber

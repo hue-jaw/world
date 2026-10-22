@@ -23,6 +23,7 @@ export class UI {
       health: $('health-bar'), gamepad: $('hud-gamepad'),
       shop: $('shop'), shopBody: $('shop-body'), shopBalance: $('shop-balance'),
       downed: $('downed'), downedSub: $('downed-sub'), gpsHint: $('gps-hint'),
+      jobs: $('jobs'), jobsBody: $('jobs-body'), jobsStatus: $('jobs-status'),
       gpsPanel: $('gps-panel'), gpsIcon: $('gps-icon'), gpsTurn: $('gps-turn'),
       gpsDist: $('gps-dist'), gpsEta: $('gps-eta'), gpsLeft: $('gps-left'),
     };
@@ -46,6 +47,9 @@ export class UI {
     this.debugVisible = false;
     this.shopOpen = false; this.shopTab = 'houses';
     this._bindShop();
+    this.jobsOpen = false;
+    this.storyGoal = null;
+    this._bindJobs();
 
     // boussole : repères cardinaux + marqueur objectif
     this.compassItems = [];
@@ -130,6 +134,14 @@ export class UI {
       this.els.objDist.textContent = obj.dist >= 1000 ? (obj.dist / 1000).toFixed(2) + ' km' : Math.round(obj.dist) + ' m';
       this.els.objTimer.textContent = obj.timeLeft !== null ? `⏱ ${Math.max(0, Math.ceil(obj.timeLeft))} s` : '';
       this.els.objTimer.classList.toggle('urgent', !!obj.urgent);
+    } else if (this.storyGoal) {
+      // Pas de mission en cours : on affiche l'objectif du chapitre. C'est ce
+      // qui remplace l'ancien « tu es livreur dès la première seconde ».
+      this.els.objective.classList.remove('hidden');
+      this.els.objTitle.textContent = `📖 ${this.storyGoal.title}`;
+      this.els.objDist.textContent = this.storyGoal.goal;
+      this.els.objTimer.textContent = '';
+      this.els.objTimer.classList.remove('urgent');
     } else this.els.objective.classList.add('hidden');
 
     // ---- bandeau GPS temps réel (10 Hz : inutile de faire plus) ----------
@@ -161,6 +173,7 @@ export class UI {
       this.els.gamepad.classList.toggle('on', !!gp?.connected);
     }
     if (this.shopOpen) this._refreshShop(ctx);
+    if (this.jobsOpen) this._refreshJobs(ctx);
 
     // --- nom de rue (change en roulant) -----------------------------------
     this._streetT = (this._streetT || 0) - dt;
@@ -337,6 +350,86 @@ export class UI {
   }
 
   // ============================ HUB COMMERCIAL =============================
+  // ------------------------------------------------------------------ emploi
+  setStoryGoal(data) {
+    this.storyGoal = data ? { title: data.title, goal: data.goal } : null;
+  }
+
+  _bindJobs() {
+    this.els.jobs?.querySelector('#jobs-close')?.addEventListener('click', () => this.closeJobs());
+    document.getElementById('tb-jobs')?.addEventListener('click', () => this.toggleJobs(this._lastCtx));
+    this.els.jobs?.addEventListener('click', (e) => { if (e.target === this.els.jobs) this.closeJobs(); });
+  }
+
+  toggleJobs(ctx) { this.jobsOpen ? this.closeJobs() : this.openJobs(ctx); }
+  openJobs(ctx) {
+    if (!ctx?.jobs) return;
+    this.jobsOpen = true; this.els.jobs?.classList.remove('hidden');
+    this._refreshJobs(ctx);
+  }
+  closeJobs() {
+    this.jobsOpen = false; this.els.jobs?.classList.add('hidden');
+  }
+
+  /**
+   * Panneau « Emploi » : petites annonces, postuler, statut.
+   * Les règles viennent de jobs.js — l'UI n'en invente aucune.
+   */
+  _refreshJobs(ctx) {
+    const body = this.els.jobsBody;
+    if (!body || !ctx?.jobs) return;
+    this._lastCtx = ctx;
+    const snap = ctx.jobs.snapshot(ctx);
+    if (this.els.jobsStatus) {
+      this.els.jobsStatus.textContent = `${snap.label} · ${snap.gigsDone}/${snap.gigsRequired} annonces`;
+    }
+    if (this._jobsSig === JSON.stringify(snap)) return;
+    this._jobsSig = JSON.stringify(snap);
+    body.innerHTML = '';
+    const item = (title, sub, btnLabel, enabled, action, done = false) => {
+      const el = document.createElement('div');
+      el.className = 'jobs-item' + (done ? ' done' : '');
+      const main = document.createElement('div'); main.className = 'ji-main';
+      const t = document.createElement('div'); t.className = 'ji-title'; t.textContent = title;
+      const s2 = document.createElement('div'); s2.className = 'ji-sub'; s2.textContent = sub;
+      main.append(t, s2); el.append(main);
+      const b = document.createElement('button');
+      b.textContent = btnLabel; b.disabled = !enabled;
+      b.addEventListener('click', () => { action(); this._jobsSig = null; this._refreshJobs(ctx); });
+      el.append(b);
+      body.append(el);
+      return el;
+    };
+
+    if (!snap.employed) {
+      item('📄 Petite annonce — course à la tâche',
+        'Un client, un colis, une adresse. Payé à la course, sans contrat.',
+        'Accepter', !ctx.missions || ctx.missions.phase === 'none' || !ctx.missions.phase,
+        () => ctx.jobs.acceptGig(ctx));
+      item(`🧾 Postuler : Coursier Metropolis Express`,
+        snap.canApply
+          ? `Caution ${snap.fee} $ (uniforme + licence). ${snap.salary} $/jour ensuite.`
+          : snap.reason,
+        'Postuler', snap.canApply,
+        () => ctx.jobs.apply(ctx));
+      item('🏠 Logement',
+        'Un toit se paie d’abord. Ouvrez la boutique (B).',
+        'Boutique', true,
+        () => { this.closeJobs(); this.openShop(ctx); });
+    } else {
+      item('✅ Contrat signé — Coursier Metropolis Express',
+        `${snap.salary} $/jour · courses +60 % · van de société au dépôt.`,
+        'Employé', false, () => {}, true);
+      item('📦 Reprendre une course',
+        'Les missions partent automatiquement. Suivez le GPS.',
+        'Compris', true, () => this.closeJobs());
+      item('🏠 Acheter un logement',
+        'Boutique → Logements. Un studio suffit pour commencer.',
+        'Boutique', true,
+        () => { this.closeJobs(); this.openShop(ctx); });
+    }
+  }
+
   _bindShop() {
     const close = () => this.closeShop();
     this.els.shop?.querySelector('#shop-close')?.addEventListener('click', close);

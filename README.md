@@ -7,7 +7,7 @@ Un jeu open-world 3D en construction : une métropole fictive où le trafic, les
 ### Option 1 — double-clic, zéro installation *(le plus simple)*
 Téléchargez **`METROPOLIS.html`** et **double-cliquez dessus**. Le jeu complet s'ouvre dans votre navigateur, hors-ligne, sans serveur. `F11` = plein écran. La sauvegarde est automatique.
 
-> Ce fichier regroupe le jeu, les styles et Three.js en un seul document (4,0 Mo — modèles 3D et textures embarqués). Pour le régénérer : `npm run build` à la racine.
+> Ce fichier regroupe le jeu, les styles et Three.js en un seul document (4,2 Mo — modèles 3D et textures embarqués). Pour le régénérer : `npm run build` à la racine.
 
 ### Option 2 — exécutable Windows `.exe`
 **[⬇ Télécharger METROPOLIS.exe](https://github.com/hue-jaw/world/releases/latest)** — portable, sans installation, sans droits administrateur, 100 % hors-ligne. Construit automatiquement par GitHub Actions à chaque mise à jour.
@@ -31,7 +31,8 @@ npm start              # http://localhost:8000
 | `H` · `L` · `M` | Klaxon · phares · son |
 | `T` · `G` · `F1` | +3 h · météo suivante · panneau debug |
 | `C` | Caméra automatique (suit la direction) / libre |
-| `B` · `Échap` | Boutique, garage, logements / fermer |
+| `B` · `J` | Boutique, garage, logements · **emploi / petites annonces** |
+| `Échap` | Fermer un panneau · passer une cinématique |
 | `E` | Monter au toit d'un immeuble acheté (et redescendre) |
 | `V` · `R` | Vue habitacle ↔ 3e personne · recentrer la caméra |
 | `Échap` | Menu : Graphismes · Contrôles · Manette · Spécial |
@@ -40,7 +41,7 @@ npm start              # http://localhost:8000
 ## 🧪 Tests & build
 
 ```bash
-npm test        # 283 vérifications : smoke, fonctionnalités, intégration, v0.4→v0.7,
+npm test        # 315 vérifications : smoke, fonctionnalités, intégration, v0.4→v0.8,
                 # assets 3D, rendu, bundle livrable
 npm run build   # régénère METROPOLIS.html (fichier unique, double-cliquable)
 ```
@@ -52,9 +53,26 @@ npm run build   # régénère METROPOLIS.html (fichier unique, double-cliquable)
 | `test_integration` | 15 | UI + économie + GPS + boucle |
 | `test_v04` / `test_v05` | 25 / 20 | poursuite, drift, ville variable, ponts |
 | `test_v06` | 20 | façades, arbres, saut, L3, moto |
-| `test_v07` | 19 | **GPS temps réel** : recalcul, flèches, manœuvres |
+| `test_v07` | 19 | GPS temps réel : recalcul, flèches, manœuvres |
+| `test_v08` | 32 | **franchissement, histoire, emploi, cinématique, carrosserie** |
 | `check_assets` | 112 | 13 modèles 3D embarqués |
 | `test_render` / `test_bundle` | 7 / 4 | rendu sans GPU, fichier livré |
+
+## 📖 v0.8 — On arrive sans rien
+
+- **Plus de livreur au démarrage.** En mode Histoire, le joueur démarre **sans
+  emploi, sans toit, avec 35 $** : aucune course ne se déclenche toute seule.
+- **Progression réelle** : petites annonces (45–75 $) → 3 annonces + 150 $ de
+  caution → embauche (**140 $/jour**, courses ×1,6, van de société) → achat d'un
+  logement. Panneau **Emploi (J)**.
+- **Cinématique d'ouverture** : 5 plans, 34 s, caméra scénarisée + lettrage,
+  passable d'un clic.
+- **Terre-pleins et îlots franchissables** : marche maximale 0,36 m ; troncs,
+  murs et immeubles restent infranchissables ; les voitures n'y montent pas.
+- **Carrosserie** : ombre de contact, vitrage physique translucide, rétroviseurs,
+  plaques, bas de caisse, échappements, becquet, barres de toit.
+- **Rendu** : résolution plafonnée à ×2, ombres 2048 px PCFSoft (portée 120 m).
+- Détail et décisions : [`docs/11_HISTOIRE_EMPLOI_v0.8.md`](docs/11_HISTOIRE_EMPLOI_v0.8.md).
 
 ## 🧭 v0.7 — GPS temps réel
 
@@ -181,6 +199,7 @@ Les personnages, véhicules et l'avatar du joueur sont de **vrais modèles 3D** 
 | [`docs/03_RISQUES_ET_PERFORMANCE.md`](docs/03_RISQUES_ET_PERFORMANCE.md) | Budgets chiffrés par plateforme et par système, 10 risques majeurs et mitigations |
 | [`docs/09_FIX_V0.6.md`](docs/09_FIX_V0.6.md) | Correctifs façades / arbres / saut / L3 / moto, avec mesures |
 | [`docs/10_GPS_TEMPS_REEL_v0.7.md`](docs/10_GPS_TEMPS_REEL_v0.7.md) | GPS temps réel : projection, recalcul, manœuvres, coût A* |
+| [`docs/11_HISTOIRE_EMPLOI_v0.8.md`](docs/11_HISTOIRE_EMPLOI_v0.8.md) | v0.8 : franchissement, histoire, emploi, carrosserie, moteur |
 
 ## 📁 Structure
 

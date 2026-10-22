@@ -114,8 +114,8 @@ export const CFG = {
 export const VEHICLE_TYPES = {
   Citadine:  { len: 3.9, wid: 1.75, bodyH: 0.62, cabinH: 0.5,  topSpeed: 33, accel: 7.5,  grip: 9,  colors: [0xc0c6cf, 0x8a94a6, 0x5b7fb9, 0xb94a48, 0x3f4756], weight: 30 },
   Berline:   { len: 4.7, wid: 1.85, bodyH: 0.6,  cabinH: 0.5,  topSpeed: 40, accel: 9,    grip: 10, colors: [0x2b2f36, 0xd8dce2, 0x35507a, 0x6e1423, 0x1f3d2b], weight: 26 },
-  SUV:       { len: 4.6, wid: 1.95, bodyH: 0.85, cabinH: 0.65, topSpeed: 36, accel: 8,    grip: 9,  colors: [0x22262c, 0xe8e8e8, 0x7a4a21, 0x2e4a6b, 0x555f6e], weight: 20 },
-  Sportive:  { len: 4.4, wid: 1.9,  bodyH: 0.48, cabinH: 0.38, topSpeed: 58, accel: 14,   grip: 12, colors: [0xd7263d, 0xf5d90a, 0xff6b1a, 0x14161a, 0x0a84ff], weight: 7 },
+  SUV:       { len: 4.6, wid: 1.95, bodyH: 0.85, cabinH: 0.65, topSpeed: 36, accel: 8,    grip: 9,  colors: [0x22262c, 0xe8e8e8, 0x7a4a21, 0x2e4a6b, 0x555f6e], weight: 20, suv: true },
+  Sportive:  { len: 4.4, wid: 1.9,  bodyH: 0.48, cabinH: 0.38, topSpeed: 58, accel: 14,   grip: 12, colors: [0xd7263d, 0xf5d90a, 0xff6b1a, 0x14161a, 0x0a84ff], weight: 7, sport: true },
   Taxi:      { len: 4.6, wid: 1.85, bodyH: 0.62, cabinH: 0.52, topSpeed: 38, accel: 8.5,  grip: 10, colors: [0xf7b500], weight: 9, taxi: true },
   Utilitaire:{ len: 5.4, wid: 2.0,  bodyH: 1.5,  cabinH: 0.0,  topSpeed: 30, accel: 6,    grip: 8,  colors: [0xe8e8e8, 0xb9c0c9, 0x8a5a2b], weight: 8, van: true },
   Police:    { len: 4.8, wid: 1.9,  bodyH: 0.62, cabinH: 0.52, topSpeed: 52, accel: 12.5, grip: 11, colors: [0xf2f4f7], weight: 0, police: true },
@@ -130,6 +130,8 @@ VEHICLE_TYPES.Moto = {
 // Tout est data-driven : prix dans une table, aucune valeur en dur dans l'UI.
 export const ECONOMY = {
   startMoney: 600,
+  // Mode Histoire : on arrive avec le contenu d'une poche (cf. cinématique).
+  startStoryMoney: 35,
   missionRewardBase: 55,
   // Garage : point fixe du quartier, agrandissable (emplacements + équipements)
   garage: {
@@ -157,8 +159,10 @@ export const ECONOMY = {
   },
   housing: {
     count: 8,                 // logements achetables générés dans le cœur
-    basePrice: 5000,
-    pricePerMeter: 260,       // prix ≈ base + hauteur × ce facteur
+    // v0.8 : le premier logement doit être atteignable avec le salaire d'un
+    // employé (14 h de jeu ≈ 2 000 $), sinon le chapitre III est décoratif.
+    basePrice: 1200,
+    pricePerMeter: 95,        // prix ≈ base + hauteur × ce facteur
     maxPrice: 42000,
   },
   health: { max: 100, fallSafe: 9.5, fallDamage: 7, regenPerSec: 1.6, hospitalCost: 250 },

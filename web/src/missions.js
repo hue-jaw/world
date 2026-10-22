@@ -19,6 +19,9 @@ export class MissionSystem {
     // Mode Histoire : missions enchaînées. Mode Libre : aucune mission imposée
     // (le joueur peut toujours explorer, la boutique et le garage restent actifs).
     this.enabled = true;
+    // 'job' = contrat (missions enchaînées), 'gig' = petite annonce unique,
+    // 'off' = aucun emploi : le joueur doit accepter une annonce (v0.8).
+    this.mode = 'job';
     this.freeRoam = null;      // en mode libre : destination choisie librement
 
     // marqueur monde : colonne de lumière + anneau + colis flottant
@@ -53,6 +56,7 @@ export class MissionSystem {
   }
 
   newDelivery(ctx) {
+    const gig = this.mode === 'gig';
     const pp = ctx.playerPos();
     const usable = this.city.buildings.filter((b) => b.kind !== 'leisure');
     let pickup = pick(usable);
@@ -64,13 +68,22 @@ export class MissionSystem {
       if (dist > 130 && dist < 430) break;
     }
     this.pickupB = pickup; this.dropB = drop;
-    this.reward = Math.round(90 + dist * 0.8);
+    // Petite annonce : payée à la tâche (45–75 $), large sur le chrono.
+    // Contrat : tarif plein + prime de régularité côté jobs.js.
+    // Le multiplicateur vient de jobs.js (contrat = +60 %), jamais de l'UI.
+    this.payMult = gig ? 1 : (ctx.jobs?.payMult ?? 1);
+    this.reward = gig
+      ? Math.round(Math.min(75, Math.max(45, 42 + dist * 0.09)))
+      : Math.round((90 + dist * 0.8) * this.payMult);
     const slack = Math.max(1.12, 1.95 - this.deliveries * 0.07);   // difficulté progressive
-    this.timeTotal = this.timeLeft = Math.round((dist / 11) * slack + 22);
+    this.timeTotal = this.timeLeft = Math.round((dist / 11) * (gig ? 1.7 : slack) + (gig ? 40 : 22));
     this.phase = 'pickup';
     this._placeMarker(pickup, 0xffd75e);
     this.box.visible = true;
-    Bus.emit('toast', { text: `📦 Nouvelle livraison — récompense $${this.reward}`, kind: '' });
+    Bus.emit('toast', {
+      text: gig ? `📄 Petite annonce — ${this.reward} $ à la livraison` : `📦 Nouvelle livraison — récompense $${this.reward}`,
+      kind: '',
+    });
     Bus.emit('missionUpdate', {});
   }
 
@@ -116,7 +129,11 @@ export class MissionSystem {
       }
       return;
     }
-    if (this.phase === 'none') {
+    if (this.mode === 'off' || this.mode === 'gig') {
+      // Aucun contrat : rien ne se déclenche tout seul. Une petite annonce
+      // commence uniquement quand le joueur l'accepte (panneau Emploi, J).
+      if (this.phase === 'none') { this.marker.visible = false; return; }
+    } else if (this.phase === 'none') {
       this._nextT -= dt;
       if (this._nextT <= 0) this.newDelivery(ctx);
       return;
@@ -149,6 +166,9 @@ export class MissionSystem {
         ctx.audio?.cash();
         Bus.emit('toast', { text: `💰 Livraison réussie ! +$${total}${bonus > 0 ? ` (bonus vitesse +$${bonus})` : ''}`, kind: 'good' });
         this.phase = 'none'; this.marker.visible = false; this._nextT = 1.6;
+        ctx.jobs?.onRunDone?.(ctx, this.mode, true);
+        // une petite annonce est unique : il faut en accepter une autre
+        if (this.mode === 'gig') this.mode = 'off';
         Bus.emit('missionUpdate', {});
         ctx.saveNow?.();
         return;
@@ -157,6 +177,8 @@ export class MissionSystem {
         ctx.audio?.fail();
         Bus.emit('toast', { text: '⏰ Temps écoulé — livraison annulée.', kind: 'bad' });
         this.phase = 'none'; this.marker.visible = false; this._nextT = 1.6;
+        ctx.jobs?.onRunDone?.(ctx, this.mode, false);
+        if (this.mode === 'gig') this.mode = 'off';
         Bus.emit('missionUpdate', {});
       }
     }
