@@ -41,7 +41,7 @@ npm start              # http://localhost:8000
 ## 🧪 Tests & build
 
 ```bash
-npm test        # 340 vérifications : smoke, fonctionnalités, intégration, v0.4→v0.9,
+npm test        # 341 vérifications : smoke, fonctionnalités, intégration, v0.4→v0.9,
                 # assets 3D, rendu, bundle livrable
 npm run build   # régénère METROPOLIS.html (fichier unique, double-cliquable)
 ```
@@ -57,7 +57,7 @@ npm run build   # régénère METROPOLIS.html (fichier unique, double-cliquable)
 | `test_v08` | 32 | franchissement, histoire, emploi, cinématique, carrosserie |
 | `test_v09` | 25 | **post-traitement, ciel, mobilier, habitacles, foule** |
 | `check_assets` | 112 | 13 modèles 3D embarqués |
-| `test_render` / `test_bundle` | 7 / 4 | rendu sans GPU, fichier livré |
+| `test_render` / `test_bundle` | 7 / 5 | rendu sans GPU, fichier livré + stabilisation |
 
 ## 🌇 v0.9 — Le rendu passe un cap
 

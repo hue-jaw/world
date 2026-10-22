@@ -107,6 +107,22 @@ console.log(`  · ${frame} image(s) de jeu simulée(s)`);
 // ------------------------------- verdict -----------------------------------
 const loading = globalThis.document.getElementById('loading');
 const loadingHidden = loading.style.display === 'none';
+// --- Stabilisation (v0.9) ---------------------------------------------------
+// Le boot masque l'écran de chargement dès la PREMIÈRE image. Un bug qui
+// n'apparaît qu'au 3ᵉ rendu (cible de post-traitement redimensionnée, premier
+// changement d'heure, première frame avec ombres) passait donc inaperçu.
+// On force 24 images supplémentaires : c'est le chemin « le joueur regarde
+// l'intro pendant deux secondes ».
+if (loadingHidden) {
+  const before = errors.length;
+  for (let i = 0; i < 24; i++) {
+    runFrame();
+    if (i % 6 === 0) await flush(4);
+  }
+  if (errors.length > before) {
+    console.log(`  · ${errors.length - before} erreur(s) apparue(s) après la 1re image`);
+  }
+}
 const shown = String(loading.textContent || '');
 let failed = 0;
 const ok = (label, cond, extra = '') => {
@@ -118,6 +134,8 @@ console.log('— Chargement du fichier livré —');
 ok('le bundle s’exécute sans exception', !bootError, bootError ? bootError.message : '');
 ok('aucune erreur pendant les premières images', errors.length === 0,
   errors.length ? errors[0].message : `${frame} images simulées`);
+ok('aucune erreur après stabilisation (post-traitement, ciel, ombres)', errors.length === 0,
+  errors.length ? errors[0].message : '24 images de plus');
 ok('l’écran de chargement a disparu', loadingHidden, loadingHidden ? '' : `texte : ${shown.slice(0, 80)}`);
 ok('aucun message d’erreur affiché au joueur', !/Erreur de chargement|Impossible de démarrer/.test(shown), shown.slice(0, 80));
 

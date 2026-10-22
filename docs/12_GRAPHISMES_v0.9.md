@@ -190,9 +190,9 @@ aucun PNJ vert fluo.
 
 ```
 SMOKE 19 · FEATURES 42 · INTÉGRATION 15 · V0.4 25 · V0.5 20 · V0.6 20
-V0.7 19 · V0.8 32 · V0.9 25 · ASSETS 112 · RENDU 7 · BUNDLE 4
+V0.7 19 · V0.8 32 · V0.9 25 · ASSETS 112 · RENDU 7 · BUNDLE 5
 ────────────────────────────────────────────────────────────
-340 vérifications · 0 échec
+341 vérifications · 0 échec
 ```
 
 ---
