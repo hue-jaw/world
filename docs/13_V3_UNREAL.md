@@ -69,7 +69,7 @@ tests, migration WebGL→UE5.
 | `unreal/Scripts/verify_project.py` | **269 ✓ / 0 échec** — uproject, UHT, includes, syntaxe, config, Content, API OpenAPI |
 | `tools/test_unreal_project.mjs` | **58 ✓ / 0 échec** — intégration, classes attendues, règles de vérité |
 | Porte qualité WebGL (inchangée) | **341 ✓ / 0 échec** |
-| **Total** | **398 ✓ / 0 échec** |
+| **Total** | **399 ✓ / 0 échec** |
 
 Non exécutés, et donc **non déclarés réussis** : compilation UE5, PIE,
 cook, les 10 tests moteur (§19). Ils exigent Windows + UE 5.8.4 + GPU.

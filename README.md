@@ -41,7 +41,7 @@ npm start              # http://localhost:8000
 ## 🧪 Tests & build
 
 ```bash
-npm test        # 398 vérifications : smoke, fonctionnalités, intégration, v0.4→v0.9,
+npm test        # 399 vérifications : smoke, fonctionnalités, intégration, v0.4→v0.9,
                 # assets 3D, rendu, bundle livrable, projet Unreal 5.8.4 (58)
 npm run build   # régénère METROPOLIS.html (fichier unique, double-cliquable)
 ```
