@@ -8,8 +8,8 @@ du dépôt, gelée, comme référence fonctionnelle.
 
 | Élément | État | Comment le vérifier |
 |---|---|---|
-| `METROPOLIS.uproject` | réel | JSON valide, UE 5.5 |
-| `Source/METROPOLIS/` (18 classes C++) | réel | `python3 Scripts/verify_project.py` |
+| `Metropolis.uproject` | réel | JSON valide, Unreal Engine 5.8.4 |
+| `Source/Metropolis/` (19 classes C++) | réel | `python3 Scripts/verify_project.py` |
 | `Config/*.ini` | réel | sections Engine/Game/Input relues par le script |
 | `Scripts/polyhaven_*.py` | réel | interroge l'API officielle, aucun ID en dur |
 | `Scripts/verify_project.py` | réel | s'exécute hors éditeur |
@@ -31,8 +31,8 @@ python3 Scripts/polyhaven_sync.py --dry-run     # liste
 python3 Scripts/polyhaven_sync.py --resolution 2k
 
 # 3. Ouvrir le projet
-#    Windows + UE 5.5 → clic droit sur METROPOLIS.uproject → Generate Visual Studio project files
-#    puis double-clic sur METROPOLIS.uproject
+#    Windows + Unreal Engine 5.8.4 → clic droit sur Metropolis.uproject → Generate Visual Studio project files
+#    puis double-clic sur Metropolis.uproject
 ```
 
 Puis suivre `01_INSTALL_WINDOWS.md` → `02_EDITOR_STEPS.md`.
@@ -40,9 +40,9 @@ Puis suivre `01_INSTALL_WINDOWS.md` → `02_EDITOR_STEPS.md`.
 ## Architecture en une page
 
 ```
-METROPOLIS.uproject
+Metropolis.uproject
 ├── Config/                  réglages moteur, jeu, entrées
-├── Source/METROPOLIS/
+├── Source/Metropolis/
 │   ├── Public/              en-têtes (API des classes)
 │   └── Private/             implémentations
 ├── Content/                 assets (créés dans l'éditeur ; Poly Haven importé)
@@ -72,7 +72,7 @@ METROPOLIS.uproject
 1. **Unreal Engine n'est pas installé dans l'environnement de développement
    automatisé** (vérifié : aucun `UnrealEditor` sur le système, aucun serveur
    graphique). Le code C++ n'a donc **pas été compilé** ici : il est écrit
-   selon l'API UE 5.5 et vérifié statiquement (UHT, includes, équilibrage).
+   selon l'API Unreal Engine 5.8.4 et vérifié statiquement (UHT, includes, équilibrage).
 2. **Les Blueprints, matériaux, Niagara et la carte** ne peuvent pas être
    produits hors éditeur. Ils sont listés étape par étape dans
    `02_EDITOR_STEPS.md`, avec l'ordre exact à respecter.

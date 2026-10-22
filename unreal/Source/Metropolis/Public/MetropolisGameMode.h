@@ -9,6 +9,8 @@
 #include "GameFramework/GameModeBase.h"
 #include "MetropolisGameMode.generated.h"
 
+class AMetropolisWorldBuilder;
+
 class AMetropolisCharacter;
 class AMetropolisVehicle;
 class APawn;
@@ -50,6 +52,17 @@ public:
 
 	UPROPERTY(EditDefaultsOnly, Category = "Jeu")
 	float BlockSpacing = 6400.f;
+
+	/**
+	 * Construit un quartier jouable sans asset (sol, chaussées, trottoirs
+	 * physiques, bâtiments) : le projet est jouable dès l'ouverture, avant
+	 * même d'avoir importé le moindre mesh.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Jeu")
+	bool bBuildProceduralDistrict = true;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Jeu")
+	TSubclassOf<class AMetropolisWorldBuilder> WorldBuilderClass;
 
 private:
 	void ApplySaveToWorld(const class UMetropolisSaveGame* Save);

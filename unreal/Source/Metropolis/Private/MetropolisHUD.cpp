@@ -13,6 +13,7 @@
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
 #include "Engine/World.h"
+#include "Engine/GameInstance.h"
 
 namespace
 {
@@ -171,8 +172,11 @@ void AMetropolisHUD::DrawWeatherPanel()
 
 void AMetropolisHUD::DrawPerformancePanel()
 {
+	// AHUD est un AActor : GetGameInstance() n'existe pas sur cette classe.
+	const UWorld* World = GetWorld();
+	const UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
 	const UGraphicsSettingsSubsystem* Graphics =
-		GetGameInstance() ? GetGameInstance()->GetSubsystem<UGraphicsSettingsSubsystem>() : nullptr;
+		GameInstance ? GameInstance->GetSubsystem<UGraphicsSettingsSubsystem>() : nullptr;
 	if (!Graphics)
 	{
 		return;

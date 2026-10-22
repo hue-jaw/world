@@ -8,7 +8,7 @@
 
 DECLARE_LOG_CATEGORY_EXTERN(LogMetropolis, Log, All);
 
-class FMETROPOLISModule : public FDefaultGameModuleImpl
+class FMetropolisModule : public FDefaultGameModuleImpl
 {
 public:
 	virtual void StartupModule() override;

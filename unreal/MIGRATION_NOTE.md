@@ -1,6 +1,6 @@
 # Note de fusion — 22/10
 
-Un premier squelette UE5 (module `Metropolis`, 8 classes, UE 5.5) existait à cet
+Un premier squelette UE5 (module `Metropolis`, 8 classes, UE 5.5 puis mis à niveau 5.8.4) existait à cet
 emplacement depuis le début de journée. Il est **remplacé** par l'implémentation
 complète du chantier V3, pour éviter deux projets concurrents dans le même
 dossier (deux `.uproject`, deux modules, deux `Config/`).
@@ -12,7 +12,7 @@ dossier (deux `.uproject`, deux modules, deux `Config/`).
 | `IInteractable` (interface d'interaction) | conservé, implémenté par `AMetropolisVehicle` |
 | `UVehicleDataAsset` (fiche véhicule data-driven) | conservé, référencé par `AMetropolisVehicle` |
 | `FCitizenIdentity` / `ECitizenActivity` (types citoyens) | conservés pour l'extension Mass Entity |
-| Intention UE 5.5 + MassEntity/ZoneGraph | reprise : `EngineAssociation 5.5`, plugins Masse déclarés (désactivés tant que non utilisés) |
+| Intention UE 5.5 + MassEntity/ZoneGraph | reprise puis corrigée pour 5.8 : `EngineAssociation 5.8`, `MassEntity` retiré (module moteur), MassGameplay/ZoneGraph déclarés (désactivés tant que non utilisés) |
 
 ## Remplacé (fonctionnalité reprise en plus complet)
 

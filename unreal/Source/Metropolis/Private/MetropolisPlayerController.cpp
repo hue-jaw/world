@@ -42,6 +42,18 @@ void AMetropolisPlayerController::BeginPlay()
 		if (TimeAction)     { Input->BindAction(TimeAction, ETriggerEvent::Started, this, &AMetropolisPlayerController::OnTimePressed); }
 		if (ExitVehicleAction) { Input->BindAction(ExitVehicleAction, ETriggerEvent::Started, this, &AMetropolisPlayerController::OnExitVehiclePressed); }
 	}
+
+	// Repli : sans assets Enhanced Input, ces commandes globales seraient
+	// inaccessibles (pas de sauvegarde, pas de pause, pas de HUD).
+	if (!SaveAction && InputComponent)
+	{
+		InputComponent->BindAction(TEXT("Save"), IE_Pressed, this, &AMetropolisPlayerController::OnSavePressed);
+		InputComponent->BindAction(TEXT("Load"), IE_Pressed, this, &AMetropolisPlayerController::OnLoadPressed);
+		InputComponent->BindAction(TEXT("Pause"), IE_Pressed, this, &AMetropolisPlayerController::OnPausePressed);
+		InputComponent->BindAction(TEXT("HUD"), IE_Pressed, this, &AMetropolisPlayerController::OnHUDPressed);
+		InputComponent->BindAction(TEXT("Time"), IE_Pressed, this, &AMetropolisPlayerController::OnTimePressed);
+		InputComponent->BindAction(TEXT("ExitVehicle"), IE_Pressed, this, &AMetropolisPlayerController::OnExitVehiclePressed);
+	}
 }
 
 void AMetropolisPlayerController::OnSavePressed() { SaveGame(); }

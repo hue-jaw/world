@@ -14,6 +14,7 @@
 #include "MetropolisCharacter.generated.h"
 
 class UCameraComponent;
+class UStaticMeshComponent;
 class USpringArmComponent;
 class UInputMappingContext;
 class UInputAction;
@@ -69,15 +70,41 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Joueur")
 	float LookSensitivity = 1.0f;
 
+	/**
+	 * Silhouette de secours (cylindre moteur) affichée uniquement si aucun
+	 * skeletal mesh n'est assigné. Sans elle, un projet fraîchement compilé
+	 * affiche une caméra volante invisible — impossible de vérifier le
+	 * déplacement ou la montée des trottoirs.
+	 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Joueur")
+	TObjectPtr<UStaticMeshComponent> FallbackBody;
+
 protected:
 	void OnMove(const FInputActionValue& Value);
 	void OnLook(const FInputActionValue& Value);
+
+	/** Cœur du déplacement / de la visée, indépendant du système d'entrée. */
+	void ApplyMove(const FVector2D& Axis);
+	void ApplyLook(const FVector2D& Axis);
 	void OnJumpPressed();
 	void OnSprintStarted();
 	void OnSprintCompleted();
 	void OnRecentered();
 	void OnInteractPressed();
 	void OnToggleViewPressed();
+
+	// --- Repli clavier/souris (aucun asset Enhanced Input requis) ----------
+	// Utilisé uniquement si les UInputAction n'ont pas été assignées (projet
+	// fraîchement compilé). Les mappages sont dans Config/DefaultInput.ini.
+	void LegacyMoveForward(float Value);
+	void LegacyMoveRight(float Value);
+	void LegacyTurn(float Value);
+	void LegacyLookUp(float Value);
+	void LegacyJumpPressed();
+	void LegacySprintPressed();
+	void LegacySprintReleased();
+	void LegacyInteractPressed();
+	void LegacyViewPressed();
 
 	UPROPERTY(EditDefaultsOnly, Category = "Entrées")
 	TObjectPtr<UInputMappingContext> DefaultContext;

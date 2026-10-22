@@ -20,17 +20,19 @@ AWeatherVisualController::AWeatherVisualController()
 	SunLight = CreateDefaultSubobject<UDirectionalLightComponent>(TEXT("SunLight"));
 	RootComponent = SunLight;
 	SunLight->SetMobility(EComponentMobility::Movable);
-	SunLight->Intensity = 10.f;                 // lux (unités UE5 par défaut)
-	SunLight->bAtmosphereSunLight = true;
+	// Réglages volontairement limités à l'API stable : intensité, couleur,
+	// rotation et ombres. Les paramètres avancés (Sky Atmosphere, distance
+	// d'ombre, capture temps réel) se règlent dans le Blueprint BP_WeatherRig,
+	// pas en C++ : moins de surface d'API, donc moins de risque de casse
+	// entre versions du moteur.
+	SunLight->SetIntensity(10.f);               // lux (unités UE5 par défaut)
 	SunLight->SetCastShadows(true);
-	SunLight->DynamicShadowDistanceMovableLight = 20000.f;
 	SunLight->SetLightColor(FLinearColor(1.0f, 0.96f, 0.90f));
 
 	SkyLight = CreateDefaultSubobject<USkyLightComponent>(TEXT("SkyLight"));
 	SkyLight->SetupAttachment(RootComponent);
 	SkyLight->SetMobility(EComponentMobility::Movable);
-	SkyLight->Intensity = 1.0f;
-	SkyLight->bRealTimeCapture = true;
+	SkyLight->SetIntensity(1.0f);
 
 	Fog = CreateDefaultSubobject<UExponentialHeightFogComponent>(TEXT("HeightFog"));
 	Fog->SetupAttachment(RootComponent);

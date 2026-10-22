@@ -8,7 +8,7 @@
 # violée (ce qui aurait cassé la compilation sur une machine Windows).
 #
 # Contrôles :
-#  1. METROPOLIS.uproject : JSON valide, module cohérent, plugins connus.
+#  1. Metropolis.uproject : JSON valide, module cohérent, plugins connus.
 #  2. Chaque .h a son .cpp ; chaque include de projet existe.
 #  3. #include "*.generated.h" est TOUJOURS le dernier include (règle UHT).
 #  4. UCLASS/USTRUCT/UENUM → GENERATED_BODY() ou *_generated.h présent.
@@ -27,9 +27,11 @@ from typing import Dict, List, Tuple
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PROJECT = os.path.abspath(os.path.join(HERE, ".."))
+PROJECT_NAME = "Metropolis"
+MODULE = "Metropolis"
 SOURCE = os.path.join(PROJECT, "Source")
 CONTENT = os.path.join(PROJECT, "Content")
-UPROJECT = os.path.join(PROJECT, "METROPOLIS.uproject")
+UPROJECT = os.path.join(PROJECT, f"{PROJECT_NAME}.uproject")
 
 problems: List[str] = []
 checks = {"uproject": 0, "sources": 0, "uht": 0, "syntax": 0, "config": 0, "content": 0, "api": 0}
@@ -46,7 +48,7 @@ def add_check(kind: str, ok: bool, message: str) -> None:
 # ---------------------------------------------------------------------------
 def check_uproject() -> None:
     if not os.path.exists(UPROJECT):
-        add_check("uproject", False, "METROPOLIS.uproject absente")
+        add_check("uproject", False, f"{PROJECT_NAME}.uproject absente")
         return
     with open(UPROJECT, "r", encoding="utf-8") as handle:
         text = handle.read()
@@ -61,16 +63,28 @@ def check_uproject() -> None:
     add_check("uproject", len(modules) == 1, "uproject : doit déclarer exactement 1 module")
     if modules:
         name = modules[0].get("Name")
-        add_check("uproject", name == "METROPOLIS", f"uproject : module « {name} » inattendu")
+        add_check("uproject", name == MODULE, f"uproject : module « {name} » inattendu")
         add_check("uproject", os.path.isdir(os.path.join(SOURCE, name)),
                   f"uproject : Source/{name}/ manquant")
     engine = str(data.get("EngineAssociation", ""))
-    add_check("uproject", bool(re.match(r"^5\.\d", engine)),
-              f"uproject : EngineAssociation « {engine} » non UE5.x")
+    add_check("uproject", engine == "5.8",
+              f"uproject : EngineAssociation « {engine} » (attendu 5.8)")
     plugins = data.get("Plugins", [])
     add_check("uproject", len(plugins) >= 3, "uproject : moins de 3 plugins déclarés")
     for plugin in plugins:
         add_check("uproject", bool(plugin.get("Name")), "uproject : plugin sans nom")
+
+    # UE 5.8 : MassEntity n'est plus un plugin mais un module moteur
+    # (/Engine/Source/Runtime/MassEntity). Le référencer dans .uproject
+    # provoque « Unable to find plugin 'MassEntity' » et bloque l'ouverture.
+    names = {plugin.get("Name") for plugin in plugins}
+    add_check("uproject", "MassEntity" not in names,
+              "uproject : MassEntity est un module moteur en 5.8, pas un plugin")
+
+    # Enhanced Input et Chaos Vehicles doivent rester actifs (exigence projet).
+    for required in ("EnhancedInput", "ChaosVehiclesPlugin"):
+        enabled = any(p.get("Name") == required and p.get("Enabled") is True for p in plugins)
+        add_check("uproject", enabled, f"uproject : {required} doit être activé")
 
 
 # ---------------------------------------------------------------------------
@@ -110,7 +124,7 @@ def check_sources(files: List[str]) -> None:
             # Seul un en-tête qui déclare une UCLASS doit avoir un .cpp :
             # un en-tête de types (USTRUCT/UENUM purs) n'en a pas besoin.
             if re.search(r"\bUCLASS\s*\(", text):
-                implementation = os.path.join(SOURCE, "METROPOLIS", "Private",
+                implementation = os.path.join(SOURCE, MODULE, "Private",
                                               os.path.basename(path)[:-2] + ".cpp")
                 add_check("sources", os.path.exists(implementation),
                           f"{relative} : UCLASS sans .cpp correspondant")
@@ -148,6 +162,19 @@ def check_sources(files: List[str]) -> None:
 # ---------------------------------------------------------------------------
 # 6. Config
 # ---------------------------------------------------------------------------
+def check_targets() -> None:
+    """UBT 5.8 exige BuildSettingsVersion.V7 et Unreal5_8."""
+    for name in ("Metropolis.Target.cs", "MetropolisEditor.Target.cs"):
+        path = os.path.join(SOURCE, name)
+        if not os.path.exists(path):
+            add_check("config", False, f"Source/{name} absente")
+            continue
+        text = open(path, encoding="utf-8").read()
+        add_check("config", "BuildSettingsVersion.V7" in text, f"{name} : BuildSettingsVersion.V7 requis en 5.8")
+        add_check("config", "EngineIncludeOrderVersion.Unreal5_8" in text, f"{name} : Unreal5_8 requis")
+        add_check("config", 'ExtraModuleNames.Add("Metropolis")' in text, f"{name} : module Metropolis absent")
+
+
 def check_config() -> None:
     engine_ini = os.path.join(PROJECT, "Config", "DefaultEngine.ini")
     if not os.path.exists(engine_ini):
@@ -167,7 +194,7 @@ def check_config() -> None:
     # Le GameMode C++ référencé doit exister dans les sources.
     for match in re.finditer(r"GlobalDefaultGameMode=/Script/(\w+)\.(\w+)", ini):
         module_name, class_name = match.group(1), match.group(2)
-        add_check("config", module_name == "METROPOLIS", f"GameMode module « {module_name} » inattendu")
+        add_check("config", module_name == MODULE, f"GameMode module « {module_name} » inattendu")
         # UE retire le préfixe A/U dans /Script/Module.Classe : on l'accepte.
         pattern = re.compile(rf"class\s+\w*_API\s+A?U?{class_name}\b|\bclass\s+A?U?{class_name}\s*:")
         found = any(pattern.search(open(path, encoding="utf-8").read())
@@ -232,7 +259,8 @@ def check_api() -> None:
 def check_docs() -> None:
     docs = os.path.join(PROJECT, "Documentation")
     required = ["README.md", "01_INSTALL_WINDOWS.md", "02_EDITOR_STEPS.md", "03_DLSS.md",
-                "04_PERFORMANCE.md", "05_POLYHAVEN.md", "06_TESTS.md", "07_MIGRATION.md"]
+                "04_PERFORMANCE.md", "05_POLYHAVEN.md", "06_TESTS.md", "07_MIGRATION.md",
+                "08_RAPPORT_UE58.md"]
     for name in required:
         path = os.path.join(docs, name)
         add_check("content", os.path.exists(path), f"Documentation/{name} absente")
@@ -243,6 +271,7 @@ def main() -> int:
     files = iter_sources()
     add_check("sources", len(files) >= 20, f"seulement {len(files)} fichiers source")
     check_sources(files)
+    check_targets()
     check_config()
     check_content()
     check_api()

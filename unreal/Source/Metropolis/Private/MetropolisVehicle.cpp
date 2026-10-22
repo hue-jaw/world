@@ -41,20 +41,24 @@ AMetropolisVehicle::AMetropolisVehicle()
 
 	// --- Physique -----------------------------------------------------------
 	// Les réglages détaillés (masse, centre de gravité, rapport de boîte,
-	// courbe de couple, suspension) vivent dans le Blueprint du véhicule,
-	// qui hérite de cette classe. On fixe ici des valeurs cohérentes par
-	// défaut : le véhicule reste pilotable même sans Blueprint.
-	if (USkeletalMeshComponent* Mesh = GetMesh())
-	{
-		Mesh->SetCollisionProfileName(TEXT("Vehicle"));
-		Mesh->SetSimulatePhysics(true);
-	}
+	// courbe de couple, suspension) vivent dans le Blueprint du véhicule.
+	// La simulation physique est activée en BeginPlay : la faire ici, avant
+	// l'enregistrement du composant, n'a aucun effet fiable.
 	BaseWheelFriction = 3.0f;
 }
 
 void AMetropolisVehicle::BeginPlay()
 {
 	Super::BeginPlay();
+
+	// Profil de collision moteur garanti ("Vehicle" existe dans BaseEngine.ini) :
+	// aucun profil personnalise n'est declare dans DefaultEngine.ini.
+	if (USkeletalMeshComponent* Mesh = GetMesh())
+	{
+		Mesh->SetCollisionProfileName(TEXT("Vehicle"));
+		Mesh->SetSimulatePhysics(true);
+		Mesh->SetNotifyRigidBodyCollision(true);
+	}
 
 	// GetVehicleMovementComponent() renvoie un UPawnMovementComponent : le cast
 	// est obligatoire (sans lui, la compilation échoue).
@@ -134,7 +138,29 @@ void AMetropolisVehicle::SetupPlayerInputComponent(UInputComponent* PlayerInputC
 			Input->BindAction(ExitAction, ETriggerEvent::Started, this, &AMetropolisVehicle::OnExitVehicle);
 		}
 	}
+
+	// Sans assets Enhanced Input, le véhicule serait immobile : repli clavier.
+	if (!ThrottleAction && !SteerAction)
+	{
+		PlayerInputComponent->BindAxis(TEXT("Throttle"), this, &AMetropolisVehicle::LegacyThrottle);
+		PlayerInputComponent->BindAxis(TEXT("Steer"), this, &AMetropolisVehicle::LegacySteer);
+		PlayerInputComponent->BindAxis(TEXT("Brake"), this, &AMetropolisVehicle::LegacyBrake);
+		PlayerInputComponent->BindAction(TEXT("Handbrake"), IE_Pressed, this, &AMetropolisVehicle::LegacyHandbrake);
+		PlayerInputComponent->BindAction(TEXT("Camera"), IE_Pressed, this, &AMetropolisVehicle::LegacyCamera);
+		PlayerInputComponent->BindAction(TEXT("ExitVehicle"), IE_Pressed, this, &AMetropolisVehicle::LegacyExit);
+	}
 }
+
+// ---------------------------------------------------------------------------
+//                        REPLI CLAVIER / SOURIS
+// ---------------------------------------------------------------------------
+
+void AMetropolisVehicle::LegacyThrottle(float Value) { SetThrottle(Value); }
+void AMetropolisVehicle::LegacySteer(float Value)    { SetSteering(Value); }
+void AMetropolisVehicle::LegacyBrake(float Value)    { SetBrake(Value); }
+void AMetropolisVehicle::LegacyHandbrake()           { ToggleHandbrake(); }
+void AMetropolisVehicle::LegacyCamera()              { CycleCamera(); }
+void AMetropolisVehicle::LegacyExit()                { OnExitRequested(); }
 
 // ---------------------------------------------------------------------------
 //                                ENTREES

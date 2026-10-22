@@ -86,8 +86,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Graphismes")
 	EQualityPreset GetPreset() const { return CurrentPreset; }
 
+	/** Retour par valeur : UHT refuse une référence en retour de UFUNCTION. */
 	UFUNCTION(BlueprintPure, Category = "Graphismes")
-	const FQualitySettings& GetSettings() const { return Current; }
+	FQualitySettings GetSettings() const { return Current; }
 
 	UFUNCTION(BlueprintPure, Category = "Graphismes")
 	EUpscalerMode GetUpscaler() const { return Upscaler; }

@@ -18,7 +18,7 @@ d'afficher une case qui ne ferait rien.
 
 ## Activer DLSS (licence NVIDIA requise)
 
-1. Télécharger le plugin **NVIDIA DLSS** pour UE 5.5 (NVIDIA Developer / Epic
+1. Télécharger le plugin **NVIDIA DLSS** pour UE 5.8.4 (NVIDIA Developer / Epic
    Marketplace) — son usage est soumis à l'accord NVIDIA, ce n'est pas un
    logiciel libre.
 2. Copier dans `Plugins/NVIDIADLSS/`.

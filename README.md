@@ -41,8 +41,8 @@ npm start              # http://localhost:8000
 ## 🧪 Tests & build
 
 ```bash
-npm test        # 392 vérifications : smoke, fonctionnalités, intégration, v0.4→v0.9,
-                # assets 3D, rendu, bundle livrable, projet Unreal (51)
+npm test        # 398 vérifications : smoke, fonctionnalités, intégration, v0.4→v0.9,
+                # assets 3D, rendu, bundle livrable, projet Unreal 5.8.4 (57)
 npm run build   # régénère METROPOLIS.html (fichier unique, double-cliquable)
 ```
 
@@ -201,18 +201,18 @@ Les personnages, véhicules et l'avatar du joueur sont de **vrais modèles 3D** 
 - Si un modèle manque, chaque système **retombe automatiquement** sur ses primitives : le jeu ne casse jamais.
 - Pour ajouter un modèle : déposer le `.glb` dans `web/assets/models/`, l'associer dans `web/src/assets.js`, puis `npm run build`.
 
-## 🏗️ Produit cible : Unreal Engine 5.5
+## 🏗️ Produit cible : Unreal Engine 5.8.4
 
-`unreal/` contient désormais **le projet UE5.5 source complet de la migration V3** : 18 classes C++ (17 UCLASS + 1 interface), graphe routier et GPS (A*), météo avec mouillage/séchage, profils graphiques + DLSS/TSR, véhicule Chaos, voirie physique (trottoirs chanfreinés franchissables), trafic IA, PNJ météo, missions, sauvegarde v3, pipeline Poly Haven et vérificateur exécutable.
+`unreal/` contient **le projet Unreal Engine 5.8.4 source** de la migration V3 : 19 classes C++ (18 UCLASS + 1 interface), graphe routier et GPS (A*), météo avec mouillage/séchage, profils graphiques + DLSS/TSR, véhicule Chaos, voirie physique (trottoirs chanfreinés franchissables), trafic IA, PNJ météo, missions, sauvegarde v3, pipeline Poly Haven et vérificateur exécutable.
 
 ```bash
-python3 unreal/Scripts/verify_project.py    # 251 contrôles statiques, 0 échec
-node tools/test_unreal_project.mjs          # 51 contrôles d'intégration, 0 échec
+python3 unreal/Scripts/verify_project.py    # 269 contrôles statiques, 0 échec
+node tools/test_unreal_project.mjs          # 57 contrôles d'intégration, 0 échec
 ```
 
 Guide : [`unreal/README.md`](unreal/README.md) · rapport de chantier : [`docs/13_V3_UNREAL.md`](docs/13_V3_UNREAL.md).
 
-⚠️ **Compilation non réalisée ici** : Unreal Editor est absent de l'environnement de développement automatisé (vérifié), aucun GPU ni serveur graphique. Le code est vérifié statiquement (règles UHT, includes, configs) et les étapes qui exigent l'éditeur sont listées une par une. Aucun asset `.uasset` factice n'est versionné.
+⚠️ **Compilation non réalisée ici** : Unreal Engine 5.8.4 est absent de l'environnement de développement automatisé (vérifié : aucun binaire moteur, aucun serveur graphique). Le code est vérifié statiquement (règles UHT, cibles V7/Unreal5_8, configs, dépendances) ; les corrections et les points à valider sur votre PC sont détaillés dans [`unreal/Documentation/08_RAPPORT_UE58.md`](unreal/Documentation/08_RAPPORT_UE58.md). Aucun asset `.uasset` factice n'est versionné.
 
 ## 📚 Documentation
 
@@ -234,7 +234,7 @@ METROPOLIS.html   Le jeu entier en un fichier, double-cliquable (généré)
 /web              Sources de la vertical slice (modules ES + serveur de dev)
   assets/models   Modèles 3D CC0 (.glb) + LICENSES.md
 /desktop          Coquille Electron → METROPOLIS.exe portable
-/unreal           Projet Unreal Engine 5.5 (source C++, scripts Poly Haven, docs)
+/unreal           Projet Unreal Engine 5.8.4 (source C++, scripts Poly Haven, docs)
 /docs             Décisions · architecture · plan · risques & performance
 /tools            Build fichier unique + tests automatisés headless
 ```

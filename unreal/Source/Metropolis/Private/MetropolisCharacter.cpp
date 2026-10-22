@@ -13,6 +13,9 @@
 #include "InputActionValue.h"
 #include "Engine/World.h"
 #include "Kismet/KismetSystemLibrary.h"
+#include "Components/StaticMeshComponent.h"
+#include "Engine/StaticMesh.h"
+#include "UObject/ConstructorHelpers.h"
 
 AMetropolisCharacter::AMetropolisCharacter()
 {
@@ -43,6 +46,19 @@ AMetropolisCharacter::AMetropolisCharacter()
 	CameraBoom->bEnableCameraLag = true;
 	CameraBoom->CameraLagSpeed = 14.f;
 
+	// Silhouette de secours : cylindre moteur, visible seulement sans mesh.
+	FallbackBody = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("FallbackBody"));
+	FallbackBody->SetupAttachment(GetCapsuleComponent());
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> CylinderFinder(TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
+	if (CylinderFinder.Succeeded())
+	{
+		FallbackBody->SetStaticMesh(CylinderFinder.Object);
+	}
+	FallbackBody->SetRelativeScale3D(FVector(0.42f, 0.42f, 0.92f));
+	FallbackBody->SetRelativeLocation(FVector(0.f, 0.f, 0.f));
+	FallbackBody->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	FallbackBody->SetCastShadow(true);
+
 	Camera = CreateDefaultSubobject<UCameraComponent>(TEXT("Camera"));
 	Camera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
 	Camera->bUsePawnControlRotation = false;
@@ -65,6 +81,13 @@ void AMetropolisCharacter::BeginPlay()
 		}
 	}
 	SetSprinting(false);
+
+	// Un vrai mesh (BP_MetropolisCharacter) remplace la silhouette de secours.
+	if (FallbackBody)
+	{
+		const bool bHasRealMesh = GetMesh() && GetMesh()->GetSkeletalMeshAsset() != nullptr;
+		FallbackBody->SetVisibility(!bHasRealMesh);
+	}
 }
 
 void AMetropolisCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -104,7 +127,59 @@ void AMetropolisCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInpu
 			Input->BindAction(ViewAction, ETriggerEvent::Started, this, &AMetropolisCharacter::OnToggleViewPressed);
 		}
 	}
+
+	// Repli si les assets Enhanced Input n'existent pas encore : sans lui, un
+	// projet fraîchement compilé n'aurait AUCUNE commande (le joueur ne
+	// pourrait même pas marcher). Les deux systèmes peuvent coexister.
+	if (!MoveAction && !LookAction)
+	{
+		PlayerInputComponent->BindAxis(TEXT("MoveForward"), this, &AMetropolisCharacter::LegacyMoveForward);
+		PlayerInputComponent->BindAxis(TEXT("MoveRight"), this, &AMetropolisCharacter::LegacyMoveRight);
+		PlayerInputComponent->BindAxis(TEXT("Turn"), this, &AMetropolisCharacter::LegacyTurn);
+		PlayerInputComponent->BindAxis(TEXT("LookUp"), this, &AMetropolisCharacter::LegacyLookUp);
+		PlayerInputComponent->BindAction(TEXT("Jump"), IE_Pressed, this, &AMetropolisCharacter::LegacyJumpPressed);
+		PlayerInputComponent->BindAction(TEXT("Sprint"), IE_Pressed, this, &AMetropolisCharacter::LegacySprintPressed);
+		PlayerInputComponent->BindAction(TEXT("Sprint"), IE_Released, this, &AMetropolisCharacter::LegacySprintReleased);
+		PlayerInputComponent->BindAction(TEXT("Interact"), IE_Pressed, this, &AMetropolisCharacter::LegacyInteractPressed);
+		PlayerInputComponent->BindAction(TEXT("ToggleView"), IE_Pressed, this, &AMetropolisCharacter::LegacyViewPressed);
+	}
 }
+
+// ---------------------------------------------------------------------------
+//                        REPLI CLAVIER / SOURIS
+// ---------------------------------------------------------------------------
+
+void AMetropolisCharacter::LegacyMoveForward(float Value)
+{
+	if (!FMath::IsNearlyZero(Value))
+	{
+		ApplyMove(FVector2D(0.f, Value));
+	}
+}
+
+void AMetropolisCharacter::LegacyMoveRight(float Value)
+{
+	if (!FMath::IsNearlyZero(Value))
+	{
+		ApplyMove(FVector2D(Value, 0.f));
+	}
+}
+
+void AMetropolisCharacter::LegacyTurn(float Value)
+{
+	ApplyLook(FVector2D(Value, 0.f));
+}
+
+void AMetropolisCharacter::LegacyLookUp(float Value)
+{
+	ApplyLook(FVector2D(0.f, Value));
+}
+
+void AMetropolisCharacter::LegacyJumpPressed()    { OnJumpPressed(); }
+void AMetropolisCharacter::LegacySprintPressed()  { OnSprintStarted(); }
+void AMetropolisCharacter::LegacySprintReleased() { OnSprintCompleted(); }
+void AMetropolisCharacter::LegacyInteractPressed(){ OnInteractPressed(); }
+void AMetropolisCharacter::LegacyViewPressed()    { OnToggleViewPressed(); }
 
 // ---------------------------------------------------------------------------
 //                                ENTREES
@@ -112,7 +187,11 @@ void AMetropolisCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInpu
 
 void AMetropolisCharacter::OnMove(const FInputActionValue& Value)
 {
-	const FVector2D Axis = Value.Get<FVector2D>();
+	ApplyMove(Value.Get<FVector2D>());
+}
+
+void AMetropolisCharacter::ApplyMove(const FVector2D& Axis)
+{
 	if (!Controller || Axis.IsNearlyZero())
 	{
 		return;
@@ -129,7 +208,11 @@ void AMetropolisCharacter::OnMove(const FInputActionValue& Value)
 
 void AMetropolisCharacter::OnLook(const FInputActionValue& Value)
 {
-	const FVector2D Axis = Value.Get<FVector2D>();
+	ApplyLook(Value.Get<FVector2D>());
+}
+
+void AMetropolisCharacter::ApplyLook(const FVector2D& Axis)
+{
 	AddControllerYawInput(Axis.X * LookSensitivity);
 	AddControllerPitchInput(Axis.Y * LookSensitivity);
 }

@@ -8,6 +8,7 @@
 #include "RoadNetworkSubsystem.h"
 #include "WeatherSubsystem.h"
 #include "GPSSubsystem.h"
+#include "MetropolisWorldBuilder.h"
 
 #include "GameFramework/PlayerStart.h"
 #include "Kismet/GameplayStatics.h"
@@ -53,6 +54,23 @@ void AMetropolisGameMode::GenerateDemoDistrict()
 
 	UE_LOG(LogTemp, Log, TEXT("Quartier de démonstration : %d nœuds, %d tronçons."),
 		Network->GetNodeCount(), Network->GetEdgeCount());
+
+	// Géométrie du quartier : sol, chaussées, trottoirs physiques, bâtiments.
+	// Aucun asset requis — le projet est jouable dès la première compilation.
+	if (bBuildProceduralDistrict)
+	{
+		UClass* BuilderClass = WorldBuilderClass
+			? WorldBuilderClass.Get()
+			: AMetropolisWorldBuilder::StaticClass();
+
+		FActorSpawnParameters Params;
+		Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+		if (AMetropolisWorldBuilder* Builder = World->SpawnActor<AMetropolisWorldBuilder>(
+			BuilderClass, FVector::ZeroVector, FRotator::ZeroRotator, Params))
+		{
+			Builder->BuildDistrict(Network);
+		}
+	}
 
 	PlacePlayerSafely();
 }

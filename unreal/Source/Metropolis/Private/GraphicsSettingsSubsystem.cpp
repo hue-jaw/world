@@ -67,29 +67,46 @@ void UGraphicsSettingsSubsystem::DetectCapabilities()
 
 void UGraphicsSettingsSubsystem::ApplyPreset(EQualityPreset Preset)
 {
+	// Affectation champ par champ : l'initialisation agrégée d'un USTRUCT
+	// (GENERATED_BODY) n'est pas garantie selon le compilateur et casse
+	// silencieusement l'ordre des membres.
 	FQualitySettings S;
 	switch (Preset)
 	{
 	case EQualityPreset::Low:
-		S = FQualitySettings{ 0, 0, 0, 0, 1, 0, 0, 0, 0, false, false, false, false, false };
+		S.ViewDistance = 0; S.Shadows = 0; S.GlobalIllumination = 0; S.Reflections = 0;
+		S.Textures = 1; S.Effects = 0; S.Foliage = 0; S.PostProcess = 0; S.AntiAliasing = 0;
+		S.bHardwareRayTracing = false; S.bVirtualShadowMaps = false; S.bVolumetricFog = false;
+		S.bMotionBlur = false; S.bDepthOfField = false;
 		break;
 	case EQualityPreset::Medium:
-		S = FQualitySettings{ 1, 1, 1, 1, 2, 1, 1, 1, 2, false, true, false, false, true };
+		S.ViewDistance = 1; S.Shadows = 1; S.GlobalIllumination = 1; S.Reflections = 1;
+		S.Textures = 2; S.Effects = 1; S.Foliage = 1; S.PostProcess = 1; S.AntiAliasing = 2;
+		S.bHardwareRayTracing = false; S.bVirtualShadowMaps = true; S.bVolumetricFog = false;
+		S.bMotionBlur = false; S.bDepthOfField = true;
 		break;
 	case EQualityPreset::High:
-		S = FQualitySettings{ 2, 2, 2, 2, 2, 2, 2, 2, 2, false, true, true, false, true };
+		S.ViewDistance = 2; S.Shadows = 2; S.GlobalIllumination = 2; S.Reflections = 2;
+		S.Textures = 2; S.Effects = 2; S.Foliage = 2; S.PostProcess = 2; S.AntiAliasing = 2;
+		S.bHardwareRayTracing = false; S.bVirtualShadowMaps = true; S.bVolumetricFog = true;
+		S.bMotionBlur = false; S.bDepthOfField = true;
 		break;
 	case EQualityPreset::Ultra:
-		S = FQualitySettings{ 3, 3, 3, 3, 3, 3, 3, 3, 3, false, true, true, false, true };
+		S.ViewDistance = 3; S.Shadows = 3; S.GlobalIllumination = 3; S.Reflections = 3;
+		S.Textures = 3; S.Effects = 3; S.Foliage = 3; S.PostProcess = 3; S.AntiAliasing = 3;
+		S.bHardwareRayTracing = false; S.bVirtualShadowMaps = true; S.bVolumetricFog = true;
+		S.bMotionBlur = false; S.bDepthOfField = true;
 		break;
 	case EQualityPreset::Custom:
+		return;
+	default:
 		return;
 	}
 
 	CurrentPreset = Preset;
 	Current = S;
 	ApplyCustom(S);
-	CurrentPreset = Preset;   // ApplyCustom passe en Personnalisé : on rétablit
+	CurrentPreset = Preset;   // ApplyCustom passe en Personnalise : on retablit
 }
 
 void UGraphicsSettingsSubsystem::ApplyCustom(const FQualitySettings& Settings)

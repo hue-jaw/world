@@ -1,18 +1,18 @@
 // ============================================================================
 // METROPOLIS — module principal
 // ============================================================================
-#include "METROPOLIS.h"
+#include "Metropolis.h"
 
 DEFINE_LOG_CATEGORY(LogMetropolis);
 
-void FMETROPOLISModule::StartupModule()
+void FMetropolisModule::StartupModule()
 {
 	UE_LOG(LogMetropolis, Log, TEXT("METROPOLIS (UE5) — module chargé."));
 }
 
-void FMETROPOLISModule::ShutdownModule()
+void FMetropolisModule::ShutdownModule()
 {
 	UE_LOG(LogMetropolis, Log, TEXT("METROPOLIS (UE5) — module déchargé."));
 }
 
-IMPLEMENT_PRIMARY_GAME_MODULE(FMETROPOLISModule, METROPOLIS, "METROPOLIS");
+IMPLEMENT_PRIMARY_GAME_MODULE(FMetropolisModule, Metropolis, "Metropolis");

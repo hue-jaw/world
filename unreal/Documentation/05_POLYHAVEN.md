@@ -55,7 +55,7 @@ manifeste final contient les IDs réels.
 ## Import dans l'éditeur
 
 ```bat
-UnrealEditor-Cmd.exe METROPOLIS.uproject -run=pythonscript ^
+UnrealEditor-Cmd.exe Metropolis.uproject -run=pythonscript ^
   -script="Scripts/polyhaven_import_ue.py"
 ```
 

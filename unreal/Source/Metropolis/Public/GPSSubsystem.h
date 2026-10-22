@@ -45,8 +45,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "GPS")
 	bool HasRoute() const { return bHasRoute; }
 
+	/** Retour par valeur : UHT refuse une référence en retour de UFUNCTION. */
 	UFUNCTION(BlueprintPure, Category = "GPS")
-	const FGPSRoute& GetRoute() const { return Route; }
+	FGPSRoute GetRoute() const { return Route; }
 
 	UFUNCTION(BlueprintPure, Category = "GPS")
 	FGPSManeuver GetNextManeuver() const { return NextManeuver; }

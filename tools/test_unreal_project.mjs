@@ -1,4 +1,4 @@
-// Vérification du projet Unreal Engine 5 (dossier unreal/METROPOLIS).
+// Vérification du projet Unreal Engine 5.8.4 (dossier unreal/).
 // Exécute Scripts/verify_project.py, qui ne dépend PAS d'Unreal : il relit la
 // structure, les règles UHT, les configs et le schéma Poly Haven.
 import { execFileSync } from 'node:child_process';
@@ -26,15 +26,15 @@ console.log('PROJET UNREAL ENGINE 5');
 
 // 1. Structure minimale du projet (§17 du cahier des charges).
 for (const relative of [
-  'METROPOLIS.uproject',
+  'Metropolis.uproject',
   'Config/DefaultEngine.ini',
   'Config/DefaultGame.ini',
   'Config/DefaultInput.ini',
-  'Source/METROPOLIS/METROPOLIS.Build.cs',
-  'Source/METROPOLIS.Target.cs',
-  'Source/METROPOLISEditor.Target.cs',
-  'Source/METROPOLIS/Public/METROPOLIS.h',
-  'Source/METROPOLIS/Private/METROPOLIS.cpp',
+  'Source/Metropolis/Metropolis.Build.cs',
+  'Source/Metropolis.Target.cs',
+  'Source/MetropolisEditor.Target.cs',
+  'Source/Metropolis/Public/Metropolis.h',
+  'Source/Metropolis/Private/Metropolis.cpp',
   'Scripts/polyhaven_api.py',
   'Scripts/polyhaven_sync.py',
   'Scripts/polyhaven_import_ue.py',
@@ -44,18 +44,29 @@ for (const relative of [
   'Documentation/02_EDITOR_STEPS.md',
   'Documentation/05_POLYHAVEN.md',
   'Documentation/07_MIGRATION.md',
+  'Documentation/08_RAPPORT_UE58.md',
 ]) {
   check(`${relative} présent`, existsSync(join(project, relative)));
 }
 
 // 2. Le .uproject est un vrai projet UE5 (module + plugins).
-const uproject = JSON.parse(readFileSync(join(project, 'METROPOLIS.uproject'), 'utf8'));
-check('.uproject : EngineAssociation UE 5.5', uproject.EngineAssociation === '5.5', uproject.EngineAssociation);
-check('.uproject : module METROPOLIS', (uproject.Modules || []).some((m) => m.Name === 'METROPOLIS'));
+const uproject = JSON.parse(readFileSync(join(project, 'Metropolis.uproject'), 'utf8'));
+check('.uproject : EngineAssociation 5.8', uproject.EngineAssociation === '5.8', uproject.EngineAssociation);
+check('.uproject : module Metropolis', (uproject.Modules || []).some((m) => m.Name === 'Metropolis'));
 check('.uproject : Chaos Vehicles activé',
   (uproject.Plugins || []).some((p) => p.Name === 'ChaosVehiclesPlugin' && p.Enabled === true));
+check('.uproject : MassEntity absent des plugins (module moteur en 5.8)',
+  !(uproject.Plugins || []).some((p) => p.Name === 'MassEntity'));
+check('.uproject : MassGameplay/ZoneGraph déclarés (plugins 5.8)',
+  ['MassGameplay', 'ZoneGraph'].every((n) => (uproject.Plugins || []).some((p) => p.Name === n)));
 check('.uproject : Enhanced Input activé',
   (uproject.Plugins || []).some((p) => p.Name === 'EnhancedInput' && p.Enabled === true));
+
+const targetsText = ['Metropolis.Target.cs', 'MetropolisEditor.Target.cs']
+  .map((f) => readFileSync(join(project, 'Source', f), 'utf8')).join('\n');
+check('cibles : BuildSettingsVersion.V7 (exigé par 5.8)', /BuildSettingsVersion\.V7/.test(targetsText));
+check('cibles : EngineIncludeOrderVersion.Unreal5_8', /EngineIncludeOrderVersion\.Unreal5_8/.test(targetsText));
+check('cibles : module Metropolis', /ExtraModuleNames\.Add\("Metropolis"\)/.test(targetsText));
 
 // 3. Aucun binaire factice dans Content/ (un .uasset vide serait un mensonge).
 function walk(dir) {
@@ -87,27 +98,27 @@ check('verify_project.py sort en 0', ok, ok ? '' : output.split('\n').slice(-5).
 const match = output.match(/VERIFICATION UNREAL : (\d+) ✓ \/ 0 échec/);
 check('verify_project.py : 0 échec', Boolean(match), match ? '' : 'compte rendu illisible');
 const controls = match ? Number(match[1]) : 0;
-check('verify_project.py : au moins 200 contrôles', controls >= 200, `${controls}`);
+check('verify_project.py : au moins 250 contrôles', controls >= 250, `${controls}`);
 
 // 5. Règles de vérité du cahier des charges, lisibles dans le code.
-const graphics = readFileSync(join(project, 'Source/METROPOLIS/Private/GraphicsSettingsSubsystem.cpp'), 'utf8');
+const graphics = readFileSync(join(project, 'Source/Metropolis/Private/GraphicsSettingsSubsystem.cpp'), 'utf8');
 check('Frame Generation refusée hors Ada/Blackwell',
   /bFrameGenAvailable = bDLSSAvailable && bAdaOrNewer;/.test(graphics));
 check('DLSS désactivée par défaut à la compilation',
-  /METROPOLIS_WITH_DLSS=0/.test(readFileSync(join(project, 'Source/METROPOLIS/METROPOLIS.Build.cs'), 'utf8')));
+  /METROPOLIS_WITH_DLSS=0/.test(readFileSync(join(project, 'Source/Metropolis/Metropolis.Build.cs'), 'utf8')));
 
-const street = readFileSync(join(project, 'Source/METROPOLIS/Private/StreetSurfaceActor.cpp'), 'utf8');
+const street = readFileSync(join(project, 'Source/Metropolis/Private/StreetSurfaceActor.cpp'), 'utf8');
 check('Voirie : collision complexe (pas de mur invisible)', /bUseComplexAsSimpleCollision = true;/.test(street));
 check('Voirie : biseau de bord (rampe physique)', /Bevel/.test(street));
 
-const road = readFileSync(join(project, 'Source/METROPOLIS/Private/RoadNetworkSubsystem.cpp'), 'utf8');
+const road = readFileSync(join(project, 'Source/Metropolis/Private/RoadNetworkSubsystem.cpp'), 'utf8');
 check('Graphe routier : A* implémenté', /FindPath/.test(road) && /Heuristic/.test(road));
 check('Graphe routier : sens uniques', /bOneWay/.test(road));
 
-const weather = readFileSync(join(project, 'Source/METROPOLIS/Private/WeatherSubsystem.cpp'), 'utf8');
+const weather = readFileSync(join(project, 'Source/Metropolis/Private/WeatherSubsystem.cpp'), 'utf8');
 check('Météo : séchage progressif (constante de temps)', /DryRate/.test(weather) && /Wetness/.test(weather));
 
-const character = readFileSync(join(project, 'Source/METROPOLIS/Private/MetropolisCharacter.cpp'), 'utf8');
+const character = readFileSync(join(project, 'Source/Metropolis/Private/MetropolisCharacter.cpp'), 'utf8');
 check('Joueur : marche de 36 cm (trottoirs franchissables)', /MaxStepHeight = 36\.f/.test(character));
 
 // 6. Poly Haven : aucun identifiant d'asset codé en dur.

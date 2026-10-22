@@ -1,8 +1,8 @@
-# 13 — METROPOLIS V3 : passage à Unreal Engine 5.5 (22/10)
+# 13 — METROPOLIS V3 : passage à Unreal Engine 5.8.4 (22/10)
 
 ## 1. Décision
 
-**Unreal Engine 5.5** pour la version finale. Le prototype WebGL v0.9.0 est
+**Unreal Engine 5.8.4** pour la version finale. Le prototype WebGL v0.9.0 est
 **gelé** : il reste la référence fonctionnelle (comportements validés,
 réglages mesurés), il ne reçoit plus de fonctionnalités.
 
@@ -14,7 +14,7 @@ pile WebGL. Continuer en three.js aurait produit une démo, pas le jeu demandé.
 
 | Disponible et vérifié | Indisponible et vérifié | Non encore vérifié |
 |---|---|---|
-| Debian 12 x86_64 ; bash ; écriture `/home/user` ; g++/gcc/make/python3/zip ; Node 22 + npm + registry ; GitHub (API, push, Releases, Actions) ; PyPI ; build HTML/Electron | Éditeur UE 5.5 (aucun binaire sur le système) ; affichage graphique (`DISPLAY` vide, xvfb absent) → ni éditeur, ni PIE, ni cook ; clang++, cmake, dotnet, mono, 7z ; `api.polyhaven.com`, `polyhaven.com`, `raw.githubusercontent.com` ; Meshy/Sketchfab/Kenney/Quaternius ; compilation Windows locale (runner GitHub uniquement) | `dl.polyhaven.org` (CDN de téléchargement) ; installation d'UE5 dans GitHub Actions ; identifiants d'assets Poly Haven |
+| Debian 12 x86_64 ; bash ; écriture `/home/user` ; g++/gcc/make/python3/zip ; Node 22 + npm + registry ; GitHub (API, push, Releases, Actions) ; PyPI ; build HTML/Electron | Éditeur UE 5.8.4 (aucun binaire sur le système) ; affichage graphique (`DISPLAY` vide, xvfb absent) → ni éditeur, ni PIE, ni cook ; clang++, cmake, dotnet, mono, 7z ; `api.polyhaven.com`, `polyhaven.com`, `raw.githubusercontent.com` ; Meshy/Sketchfab/Kenney/Quaternius ; compilation Windows locale (runner GitHub uniquement) | `dl.polyhaven.org` (CDN de téléchargement) ; installation d'UE5 dans GitHub Actions ; identifiants d'assets Poly Haven |
 
 **Conséquence honnête** : on peut produire le *code source* du projet, ses
 configs, son pipeline d'assets et sa documentation — **pas** les niveaux, les
@@ -23,7 +23,7 @@ l'éditeur, sur un poste Windows.
 
 ## 3. Ce qui a été livré
 
-### Code C++ (18 classes exportées — 17 `UCLASS` + 1 interface — dans `unreal/Source/METROPOLIS/`)
+### Code C++ (19 classes exportées — 18 `UCLASS` + 1 interface — dans `unreal/Source/Metropolis/`)
 
 | Domaine | Classes | Points vérifiables dans le code |
 |---|---|---|
@@ -66,17 +66,17 @@ tests, migration WebGL→UE5.
 
 | Suite | Résultat |
 |---|---|
-| `unreal/Scripts/verify_project.py` | **251 ✓ / 0 échec** — uproject, UHT, includes, syntaxe, config, Content, API OpenAPI |
-| `tools/test_unreal_project.mjs` | **51 ✓ / 0 échec** — intégration, classes attendues, règles de vérité |
+| `unreal/Scripts/verify_project.py` | **269 ✓ / 0 échec** — uproject, UHT, includes, syntaxe, config, Content, API OpenAPI |
+| `tools/test_unreal_project.mjs` | **57 ✓ / 0 échec** — intégration, classes attendues, règles de vérité |
 | Porte qualité WebGL (inchangée) | **341 ✓ / 0 échec** |
-| **Total** | **392 ✓ / 0 échec** |
+| **Total** | **398 ✓ / 0 échec** |
 
 Non exécutés, et donc **non déclarés réussis** : compilation UE5, PIE,
-cook, les 10 tests moteur (§19). Ils exigent Windows + UE 5.5 + GPU.
+cook, les 10 tests moteur (§19). Ils exigent Windows + UE 5.8.4 + GPU.
 
 ## 5. Ce qu'il reste à faire, dans l'ordre
 
-1. Sur un poste Windows : installer UE 5.5 + VS 2022, générer les fichiers de
+1. Sur un poste Windows : installer UE 5.8.4 + VS 2022, générer les fichiers de
    projet, compiler (`unreal/Documentation/01_INSTALL_WINDOWS.md`).
 2. Créer la carte `L_DemoDistrict`, `M_Master_PBR`, les assets Enhanced Input,
    les Blueprints, Niagara (`02_EDITOR_STEPS.md`, 9 étapes).

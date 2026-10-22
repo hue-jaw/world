@@ -1,11 +1,11 @@
 {
 	"FileVersion": 3,
-	"EngineAssociation": "5.5",
+	"EngineAssociation": "5.8",
 	"Category": "Games",
-	"Description": "METROPOLIS — open world urbain (migration Unreal Engine 5).",
+	"Description": "METROPOLIS - open world urbain (Unreal Engine 5.8). Migration du prototype WebGL v0.9.",
 	"Modules": [
 		{
-			"Name": "METROPOLIS",
+			"Name": "Metropolis",
 			"Type": "Runtime",
 			"LoadingPhase": "Default",
 			"AdditionalDependencies": [
@@ -18,15 +18,15 @@
 		{ "Name": "ChaosVehiclesPlugin", "Enabled": true },
 		{ "Name": "EnhancedInput", "Enabled": true },
 		{ "Name": "Niagara", "Enabled": true },
-		{ "Name": "ModelingToolsEditorMode", "Enabled": true },
-		{ "Name": "PythonScriptPlugin", "Enabled": true },
 		{ "Name": "ProceduralMeshComponent", "Enabled": true },
+		{ "Name": "PythonScriptPlugin", "Enabled": true },
 		{ "Name": "EditorScriptingUtilities", "Enabled": true },
-		{ "Name": "Water", "Enabled": false },
-		{ "Name": "HairStrands", "Enabled": false },
-		{ "Name": "MassEntity", "Enabled": false },
+		{ "Name": "ModelingToolsEditorMode", "Enabled": true },
+
 		{ "Name": "MassGameplay", "Enabled": false },
-		{ "Name": "ZoneGraph", "Enabled": false }
+		{ "Name": "ZoneGraph", "Enabled": false },
+		{ "Name": "MassAI", "Enabled": false },
+		{ "Name": "MassCrowd", "Enabled": false }
 	],
 	"TargetPlatforms": [ "Windows" ]
 }
