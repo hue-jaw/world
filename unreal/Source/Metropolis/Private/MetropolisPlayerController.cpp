@@ -56,8 +56,8 @@ void AMetropolisPlayerController::BeginPlay()
 	}
 }
 
-void AMetropolisPlayerController::OnSavePressed() { SaveGame(); }
-void AMetropolisPlayerController::OnLoadPressed() { LoadGame(); }
+void AMetropolisPlayerController::OnSavePressed() { SaveGame(DefaultSlot()); }
+void AMetropolisPlayerController::OnLoadPressed() { LoadGame(DefaultSlot()); }
 void AMetropolisPlayerController::OnHUDPressed()  { ToggleHUD(); }
 void AMetropolisPlayerController::OnExitVehiclePressed() { ExitVehicle(); }
 

@@ -4,7 +4,7 @@ Projet **Unreal Engine 5.8.4** (Windows 11 x64, VS Community 2026) issu de la mi
 gelé à la racine du dépôt comme référence fonctionnelle.
 
 ```bash
-python3 Scripts/verify_project.py    # 269 contrôles statiques, 0 échec
+python3 Scripts/verify_project.py    # 273 contrôles statiques, 0 échec
 node ../tools/test_unreal_project.mjs # 55 contrôles d'intégration, 0 échec
 ```
 

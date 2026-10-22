@@ -14,6 +14,9 @@
 #include "Engine/World.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "Components/StaticMeshComponent.h"
+// GetMesh()->GetSkeletalMeshAsset()/HideBoneByName exigent le type COMPLET :
+// Character.h ne fait qu'une déclaration anticipée de USkeletalMeshComponent.
+#include "Components/SkeletalMeshComponent.h"
 #include "Engine/StaticMesh.h"
 #include "UObject/ConstructorHelpers.h"
 

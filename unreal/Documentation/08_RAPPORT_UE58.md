@@ -138,6 +138,18 @@ Non modifiés (vérifiés sains) : Enhanced Input, Chaos Vehicles, Niagara,
 `UTickableWorldSubsystem`, `UPrimaryDataAsset`, `UGameplayStatics`,
 `UProceduralMeshComponent`, Gameplay Tags.
 
+### 4 bis. Trois défauts de compilation trouvés à la relecture du 22/10
+
+| # | Fichier | Défaut | Conséquence à la compilation | Correction |
+|---|---|---|---|---|
+| 15 | `Public/StreetSurfaceActor.h` | `FProcMeshTangent` utilisé dans `BuildPrismSection` alors que le type n'était ni déclaré ni inclus (seule une déclaration anticipée de `class UProceduralMeshComponent` figurait) | `error C2065: 'FProcMeshTangent': undeclared identifier` | `#include "ProceduralMeshComponent.h"` ajouté dans l'en-tête |
+| 16 | `Private/MetropolisCharacter.cpp` | `GetMesh()->GetSkeletalMeshAsset()` et `->HideBoneByName()` appelés alors que `GameFramework/Character.h` ne fait qu'une déclaration anticipée de `USkeletalMeshComponent` | `error C2027: use of undefined type 'USkeletalMeshComponent'` | `#include "Components/SkeletalMeshComponent.h"` ajouté |
+| 17 | `MetropolisGameMode.h`, `MetropolisPlayerController.h` | arguments par défaut `= TEXT("METROPOLIS_01")` sur des `UFUNCTION` | UHT n'analyse pas une expression `TEXT(...)` comme valeur par défaut → échec de génération d'en-tête | paramètre rendu obligatoire, constante `DefaultSlot()` côté C++ |
+
+Ces trois défauts ne se voient pas à la lecture rapide : ils n'apparaissent qu'en
+reconstituant la chaîne d'inclusions. Ils sont désormais **verrouillés** par
+`Scripts/verify_project.py` (section `compile`, 4 contrôles).
+
 ## 5. Ce que le projet fait maintenant **sans aucun asset**
 
 `AMetropolisGameMode::BeginPlay()` → `GenerateDemoDistrict()` :
@@ -157,6 +169,21 @@ tournent. Les assets Poly Haven et les Blueprints le remplacent ensuite
 (`02_EDITOR_STEPS.md`).
 
 ## 6. Procédure exacte sur votre PC
+
+### 6.0 Le plus simple : `Scripts\Build-Metropolis.bat`
+
+Double-clic sur `unreal\Scripts\Build-Metropolis.bat`. Le script :
+
+1. localise UE 5.8 (variable `UE_ROOT`, puis registre Epic, puis chemins usuels) ;
+2. vérifie avec `vswhere` que Visual Studio possède la charge de travail C++ ;
+3. supprime `.vs`, `Binaries`, `Intermediate`, `DerivedDataCache`, `Saved\Logs` et les `.sln` ;
+4. lance `Build.bat MetropolisEditor Win64 Development` et écrit tout dans `BuildLog.txt` ;
+5. affiche la **première** erreur — celle qu'il faut transmettre.
+
+Options : `Build-Metropolis.bat game` (cible `Metropolis`), `Build-Metropolis.bat vs`
+(génère seulement les fichiers Visual Studio).
+
+### 6.1 À la main
 
 ```bat
 :: 0. Fermer l'éditeur et le launcher

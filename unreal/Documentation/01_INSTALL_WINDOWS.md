@@ -27,6 +27,11 @@ Dans VS Installer, cocher :
 
 > ⚠️ VS 2022 (MSVC v143) **ne suffit plus** pour UE 5.8 : UBT réclame le toolset v145.
 
+> **Raccourci** : une fois UE 5.8.4 et Visual Studio installés, lancez
+> `Scripts\Build-Metropolis.bat` (double-clic). Il nettoie les caches, compile
+> `MetropolisEditor` et isole la première erreur dans `BuildLog.txt`.
+> Les sections suivantes détaillent chaque étape et servent de dépannage.
+
 ## 1. Nettoyer l'ancienne version (obligatoire)
 
 Passer de 5.5 (ou 5.4) à 5.8.4 avec d'anciens intermédiaires provoque des erreurs

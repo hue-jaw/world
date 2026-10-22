@@ -32,13 +32,13 @@ public:
 
 	/** Sauvegarde/chargement (slot unique par défaut). */
 	UFUNCTION(BlueprintCallable, Category = "Jeu")
-	bool SaveGameToSlot(const FString& SlotName = TEXT("METROPOLIS_01"));
+	bool SaveGameToSlot(const FString& SlotName);
 
 	UFUNCTION(BlueprintCallable, Category = "Jeu")
-	bool LoadGameFromSlot(const FString& SlotName = TEXT("METROPOLIS_01"));
+	bool LoadGameFromSlot(const FString& SlotName);
 
 	UFUNCTION(BlueprintPure, Category = "Jeu")
-	bool HasSaveGame(const FString& SlotName = TEXT("METROPOLIS_01")) const;
+	bool HasSaveGame(const FString& SlotName) const;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Jeu")
 	TSubclassOf<AMetropolisCharacter> CharacterClass;

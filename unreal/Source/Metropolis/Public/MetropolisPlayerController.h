@@ -28,11 +28,15 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Joueur")
 	bool ExitVehicle();
 
-	UFUNCTION(BlueprintCallable, Category = "Joueur")
-	bool SaveGame(const FString& SlotName = TEXT("METROPOLIS_01"));
+	/** Slot de sauvegarde unique du projet (aucun défaut dans un UFUNCTION :
+	 *  UHT n'accepte pas un argument par défaut de type TEXT("...")). */
+	static const TCHAR* DefaultSlot() { return TEXT("METROPOLIS_01"); }
 
 	UFUNCTION(BlueprintCallable, Category = "Joueur")
-	bool LoadGame(const FString& SlotName = TEXT("METROPOLIS_01"));
+	bool SaveGame(const FString& SlotName);
+
+	UFUNCTION(BlueprintCallable, Category = "Joueur")
+	bool LoadGame(const FString& SlotName);
 
 	UFUNCTION(BlueprintCallable, Category = "Joueur")
 	void TogglePause();

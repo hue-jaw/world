@@ -18,9 +18,12 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+// ProceduralMeshComponent.h est OBLIGATOIRE ici : BuildPrismSection utilise
+// FProcMeshTangent par référence, et une simple déclaration anticipée de
+// classe ne suffit pas pour un struct utilisé dans un TArray.
+#include "ProceduralMeshComponent.h"
 #include "StreetSurfaceActor.generated.h"
 
-class UProceduralMeshComponent;
 class UPhysicalMaterial;
 class UMaterialInterface;
 

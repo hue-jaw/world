@@ -66,7 +66,7 @@ tests, migration WebGL→UE5.
 
 | Suite | Résultat |
 |---|---|
-| `unreal/Scripts/verify_project.py` | **269 ✓ / 0 échec** — uproject, UHT, includes, syntaxe, config, Content, API OpenAPI |
+| `unreal/Scripts/verify_project.py` | **273 ✓ / 0 échec** — uproject, UHT, includes, syntaxe, config, Content, API OpenAPI |
 | `tools/test_unreal_project.mjs` | **58 ✓ / 0 échec** — intégration, classes attendues, règles de vérité |
 | Porte qualité WebGL (inchangée) | **341 ✓ / 0 échec** |
 | **Total** | **399 ✓ / 0 échec** |

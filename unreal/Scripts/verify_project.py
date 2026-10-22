@@ -266,6 +266,46 @@ def check_api() -> None:
 
 
 # ---------------------------------------------------------------------------
+# 8 bis. Garde-fous de compilation (défauts réellement corrigés)
+# ---------------------------------------------------------------------------
+def check_compile_guards() -> None:
+    """Ces contrôles existent parce que chacun correspond à une ERREUR de
+    compilation réelle, pas à une préférence de style. Les régressions sont
+    donc détectées avant tout essai dans l'éditeur."""
+
+    street_h = os.path.join(SOURCE, "Metropolis", "Public", "StreetSurfaceActor.h")
+    with open(street_h, "r", encoding="utf-8") as handle:
+        street = handle.read()
+    # FProcMeshTangent est un struct : une déclaration anticipée de classe ne
+    # suffit pas, il faut l'en-tête complet.
+    add_check("compile", '#include "ProceduralMeshComponent.h"' in street,
+              "StreetSurfaceActor.h : FProcMeshTangent exige ProceduralMeshComponent.h")
+
+    char_cpp = os.path.join(SOURCE, "Metropolis", "Private", "MetropolisCharacter.cpp")
+    with open(char_cpp, "r", encoding="utf-8") as handle:
+        character = handle.read()
+    add_check("compile", '#include "Components/SkeletalMeshComponent.h"' in character,
+              "MetropolisCharacter.cpp : USkeletalMeshComponent incomplet (GetMesh())")
+
+    # UHT n'évalue pas TEXT("...") comme valeur par défaut.
+    offenders = []
+    for root, _dirs, names in os.walk(os.path.join(SOURCE, "Metropolis", "Public")):
+        for name in names:
+            if not name.endswith(".h"):
+                continue
+            with open(os.path.join(root, name), "r", encoding="utf-8") as handle:
+                text = handle.read()
+            for match in re.finditer(r"UFUNCTION\s*\([^)]*\)\s*[^;{]*TEXT\(", text):
+                offenders.append(name)
+    add_check("compile", not offenders,
+              f"argument par défaut TEXT() dans un UFUNCTION : {sorted(set(offenders))}")
+
+    script = os.path.join(PROJECT, "Scripts", "Build-Metropolis.bat")
+    add_check("compile", os.path.exists(script),
+              "Scripts/Build-Metropolis.bat absent (compilation + diagnostic)")
+
+
+# ---------------------------------------------------------------------------
 # 9. Documentation obligatoire
 # ---------------------------------------------------------------------------
 def check_docs() -> None:
@@ -287,6 +327,7 @@ def main() -> int:
     check_config()
     check_content()
     check_api()
+    check_compile_guards()
     check_docs()
 
     total = sum(checks.values())
