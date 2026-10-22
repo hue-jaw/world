@@ -41,8 +41,8 @@ npm start              # http://localhost:8000
 ## 🧪 Tests & build
 
 ```bash
-npm test        # 341 vérifications : smoke, fonctionnalités, intégration, v0.4→v0.9,
-                # assets 3D, rendu, bundle livrable
+npm test        # 392 vérifications : smoke, fonctionnalités, intégration, v0.4→v0.9,
+                # assets 3D, rendu, bundle livrable, projet Unreal (51)
 npm run build   # régénère METROPOLIS.html (fichier unique, double-cliquable)
 ```
 
@@ -203,7 +203,16 @@ Les personnages, véhicules et l'avatar du joueur sont de **vrais modèles 3D** 
 
 ## 🏗️ Produit cible : Unreal Engine 5.5
 
-`unreal/` contient le projet UE5.5 portant **la même architecture** (C++ : personnage TPS Enhanced Input, véhicule Chaos possédable, subsystems Trafic/Météo/Missions, interface d'interaction, sauvegarde versionnée, configs Lumen/Nanite). Guide de démarrage et checklist de validation : [`unreal/README.md`](unreal/README.md). ⚠️ À compiler sur un poste UE5.5 — voir l'avertissement en tête de ce guide.
+`unreal/` contient désormais **le projet UE5.5 source complet de la migration V3** : 21 classes C++, graphe routier et GPS (A*), météo avec mouillage/séchage, profils graphiques + DLSS/TSR, véhicule Chaos, voirie physique (trottoirs chanfreinés franchissables), trafic IA, PNJ météo, missions, sauvegarde v3, pipeline Poly Haven et vérificateur exécutable.
+
+```bash
+python3 unreal/Scripts/verify_project.py    # 251 contrôles statiques, 0 échec
+node tools/test_unreal_project.mjs          # 51 contrôles d'intégration, 0 échec
+```
+
+Guide : [`unreal/README.md`](unreal/README.md) · rapport de chantier : [`docs/13_V3_UNREAL.md`](docs/13_V3_UNREAL.md).
+
+⚠️ **Compilation non réalisée ici** : Unreal Editor est absent de l'environnement de développement automatisé (vérifié), aucun GPU ni serveur graphique. Le code est vérifié statiquement (règles UHT, includes, configs) et les étapes qui exigent l'éditeur sont listées une par une. Aucun asset `.uasset` factice n'est versionné.
 
 ## 📚 Documentation
 
@@ -225,7 +234,7 @@ METROPOLIS.html   Le jeu entier en un fichier, double-cliquable (généré)
 /web              Sources de la vertical slice (modules ES + serveur de dev)
   assets/models   Modèles 3D CC0 (.glb) + LICENSES.md
 /desktop          Coquille Electron → METROPOLIS.exe portable
-/unreal           Projet Unreal Engine 5.5 (produit AAA cible)
+/unreal           Projet Unreal Engine 5.5 (source C++, scripts Poly Haven, docs)
 /docs             Décisions · architecture · plan · risques & performance
 /tools            Build fichier unique + tests automatisés headless
 ```

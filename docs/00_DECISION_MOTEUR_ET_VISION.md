@@ -31,7 +31,7 @@ L'environnement de travail de l'agent ne contient ni UE5 ni Unity : impossible d
 | Piste | Contenu | État |
 |---|---|---|
 | `web/` — vertical slice Three.js | Tous les systèmes §5→§24 du brief implémentés à échelle réduite, **jouables dans un navigateur** | ✅ Écrit, testé automatiquement (`tools/smoke_test.mjs` : 17 vérifications), servi en Live Preview |
-| `unreal/` — projet UE5.5 | Même architecture portée en C++/subsystems/actors prêts à accueillir les assets | 📐 Structuré, **à compiler/valider sur poste UE5** |
+| `unreal/` — projet UE5.5 | Migration V3 complète : 21 classes C++ (graphe routier + A*, météo, profils graphiques, voirie physique, Chaos, trafic, PNJ, missions, sauvegarde), scripts Poly Haven, vérificateur | ✅ Écrit et vérifié statiquement (251 contrôles) · ⏳ **à compiler et compléter dans l'éditeur** |
 
 Le prototype web sert de **bac à sable de game design** permanent : équilibrer le trafic, les routines PNJ, les missions et l'économie en 10 secondes d'itération, puis porter les paramètres et algorithmes validés dans UE5 (les algorithmes — graph de routes, BFS piétons, LOD de simulation, machine météo — sont indépendants du moteur).
 
