@@ -74,6 +74,10 @@ kbd { background:#1c2432; border:1px solid #3a465e; border-bottom-width:3px; bor
 #objective-title { font-size:16px; font-weight:700; }
 #objective-info { font-size:13px; color:#a9c4e8; display:flex; gap:16px; justify-content:center; margin-top:2px; font-variant-numeric:tabular-nums; }
 #objective-timer.urgent { color:#ff6b6b; font-weight:800; }
+/* objectif d'histoire : une phrase, pas une distance — on la laisse respirer */
+#objective.story { max-width:min(760px,92vw); }
+#objective.story #objective-dist { display:block; font-size:12.5px; color:#9fe6ff; line-height:1.35; }
+#objective.story #objective-title { font-size:14px; letter-spacing:.02em; }
 
 /* ============================ GPS temps réel (v0.7) ======================== */
 #gps-panel { position:absolute; top:118px; right:16px; width:268px; padding:10px 14px;

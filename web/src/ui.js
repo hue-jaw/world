@@ -129,7 +129,7 @@ export class UI {
     // objectif
     const obj = ctx.missions.objectiveInfo(ctx);
     if (obj) {
-      this.els.objective.classList.remove('hidden');
+      this.els.objective.classList.remove('hidden', 'story');
       this.els.objTitle.textContent = obj.title;
       this.els.objDist.textContent = obj.dist >= 1000 ? (obj.dist / 1000).toFixed(2) + ' km' : Math.round(obj.dist) + ' m';
       this.els.objTimer.textContent = obj.timeLeft !== null ? `⏱ ${Math.max(0, Math.ceil(obj.timeLeft))} s` : '';
@@ -137,6 +137,7 @@ export class UI {
     } else if (this.storyGoal) {
       // Pas de mission en cours : on affiche l'objectif du chapitre. C'est ce
       // qui remplace l'ancien « tu es livreur dès la première seconde ».
+      this.els.objective.classList.add('story');
       this.els.objective.classList.remove('hidden');
       this.els.objTitle.textContent = `📖 ${this.storyGoal.title}`;
       this.els.objDist.textContent = this.storyGoal.goal;
