@@ -210,7 +210,7 @@ export class MenuSystem {
     this.ctx.missions.enabled = !free;
     if (this.ctx.gps) {
       this.ctx.gps.locked = free;
-      if (free) this.ctx.gps.route = [];
+      if (free) this.ctx.gps.clear();
     }
   }
 

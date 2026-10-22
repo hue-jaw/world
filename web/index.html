@@ -16,7 +16,7 @@
 <!-- ============ ÉCRAN TITRE ============ -->
 <div id="title-screen">
   <div class="title-box">
-    <div class="title-badge">OPEN-WORLD · VERTICAL SLICE v0.6.0</div>
+    <div class="title-badge">OPEN-WORLD · VERTICAL SLICE v0.7.0</div>
     <h1>METROPOLIS</h1>
     <p class="title-sub">Un quartier vivant : trafic IA, PNJ à routines, cycle jour/nuit, météo dynamique, police et missions de livraison.</p>
     <div class="controls-grid">
@@ -63,6 +63,15 @@
   <div id="objective" class="panel hidden">
     <div id="objective-title">📦 Récupérez le colis</div>
     <div id="objective-info"><span id="objective-dist">0 m</span><span id="objective-timer"></span></div>
+  </div>
+
+  <!-- guidage GPS temps réel (prochaine manœuvre, distance, temps) -->
+  <div id="gps-panel" class="panel hidden">
+    <div id="gps-icon">⬆</div>
+    <div id="gps-body">
+      <div id="gps-turn">Suivez l’itinéraire</div>
+      <div id="gps-meta"><b id="gps-dist">—</b><span id="gps-eta"></span><span id="gps-left"></span></div>
+    </div>
   </div>
 
   <!-- minimap -->

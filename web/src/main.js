@@ -379,7 +379,9 @@ function loop() {
         `Wanted : ${ts.wanted}★ (heat ${traffic.heat.toFixed(2)})\n` +
         `Joueur : (${pp.x.toFixed(0)}, ${pp.z.toFixed(0)}) ${pv ? `· ${pv.typeName} ${Math.round(pv.speedKmh())} km/h · dégâts ${Math.round(pv.damage * 100)}%` : '· à pied'}\n` +
         `Métropole : ${city.chunks.size} chunks · ${(city.nodes.length - 1) * CFG.city.pitch / 1000} km de côté\n` +
-        `GPS : ${gps.route.length} nœuds · ${gps.arrows.count} flèches\n` +
+        `GPS : ${gps.route.length} nœuds · ${gps.arrows.count} flèches · ${gps.recalcCount} recalculs`
+          + `${gps._proj ? ` · écart ${gps._proj.dist.toFixed(0)} m` : ''}`
+          + `${gps.remaining ? ` · reste ${(gps.remaining / 1000).toFixed(2)} km` : ''}\n` +
         `Économie : $${Math.round(economy.money)} · ${economy.ownedCars.length}/${economy.garageSlots} véhicules · ${economy.ownedHouses.length} logement(s)\n` +
         `LOD sim : <70m plein · <170m /4 · au-delà /24`);
     }

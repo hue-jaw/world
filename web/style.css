@@ -75,6 +75,21 @@ kbd { background:#1c2432; border:1px solid #3a465e; border-bottom-width:3px; bor
 #objective-info { font-size:13px; color:#a9c4e8; display:flex; gap:16px; justify-content:center; margin-top:2px; font-variant-numeric:tabular-nums; }
 #objective-timer.urgent { color:#ff6b6b; font-weight:800; }
 
+/* ============================ GPS temps réel (v0.7) ======================== */
+#gps-panel { position:absolute; top:118px; right:16px; width:268px; padding:10px 14px;
+  display:flex; gap:12px; align-items:center; }
+#gps-panel.hidden { display:none; }
+#gps-icon { font-size:30px; line-height:1; width:38px; text-align:center; color:#7cc4ff;
+  text-shadow:0 0 14px rgba(47,139,255,.75); }
+#gps-icon.turn { color:#9fe6ff; }
+#gps-body { flex:1; min-width:0; }
+#gps-turn { font-size:13.5px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+#gps-meta { display:flex; gap:10px; align-items:baseline; margin-top:3px; font-size:11.5px; color:#a9c4e8;
+  font-variant-numeric:tabular-nums; }
+#gps-meta b { color:#eaf6ff; font-size:14px; }
+#gps-panel.rerouting #gps-turn::after { content:' · recalcul…'; color:#ffd75e; font-weight:600; }
+@media (max-width:760px) { #gps-panel { width:214px; top:96px; } }
+
 #minimap-wrap { position:absolute; left:16px; bottom:16px; padding:6px; }
 #minimap { display:block; border-radius:8px; }
 #minimap-north { position:absolute; top:9px; right:12px; font-size:11px; font-weight:800; color:#ffd75e; }

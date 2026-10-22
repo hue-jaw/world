@@ -5,6 +5,7 @@
 // ============================================================================
 import { Bus, clamp, WEATHER_STATES, ECONOMY } from './core.js';
 import { WORLD_HALF } from './city.js';
+import { fmtDistance } from './gps.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -22,6 +23,8 @@ export class UI {
       health: $('health-bar'), gamepad: $('hud-gamepad'),
       shop: $('shop'), shopBody: $('shop-body'), shopBalance: $('shop-balance'),
       downed: $('downed'), downedSub: $('downed-sub'), gpsHint: $('gps-hint'),
+      gpsPanel: $('gps-panel'), gpsIcon: $('gps-icon'), gpsTurn: $('gps-turn'),
+      gpsDist: $('gps-dist'), gpsEta: $('gps-eta'), gpsLeft: $('gps-left'),
     };
     this.mini = $('minimap').getContext('2d');
     // Clic sur la mini-carte = poser une destination (mode Libre). En mode
@@ -39,7 +42,7 @@ export class UI {
       ctx.gps.setTarget(x, z);
       Bus.emit('toast', { text: '🗺️ Destination libre posée sur la carte', kind: '' });
     });
-    this._lastClock = ''; this._miniT = 0; this._promptText = undefined;
+    this._lastClock = ''; this._miniT = 0; this._gpsT = 0; this._promptText = undefined;
     this.debugVisible = false;
     this.shopOpen = false; this.shopTab = 'houses';
     this._bindShop();
@@ -129,6 +132,13 @@ export class UI {
       this.els.objTimer.classList.toggle('urgent', !!obj.urgent);
     } else this.els.objective.classList.add('hidden');
 
+    // ---- bandeau GPS temps réel (10 Hz : inutile de faire plus) ----------
+    this._gpsT -= dt;
+    if (this._gpsT <= 0 && this.els.gpsPanel) {
+      this._gpsT = 0.1;
+      this._updateGpsPanel(ctx);
+    }
+
     // compteur
     const pv = ctx.playerVehicle;
     if (pv) {
@@ -169,6 +179,29 @@ export class UI {
     this._updateCompass(ctx, obj);
     this._miniT -= dt;
     if (this._miniT <= 0) { this._miniT = 0.1; this._drawMinimap(ctx, obj); }
+  }
+
+  /**
+   * Bandeau de guidage : prochaine manœuvre, distance jusqu'à celle-ci,
+   * distance restante et temps estimé. Toutes les valeurs viennent du GPS
+   * recalculé en temps réel — rien n'est figé au moment où l'on a posé
+   * la destination.
+   */
+  _updateGpsPanel(ctx) {
+    const g = ctx.gps?.guidance?.(ctx);
+    const show = !!g && !!ctx.gps?.hasRoute?.();
+    this.els.gpsPanel.classList.toggle('hidden', !show);
+    if (!show) return;
+    this.els.gpsIcon.textContent = g.icon;
+    this.els.gpsIcon.classList.toggle('turn', g.side === 'left' || g.side === 'right');
+    this.els.gpsTurn.textContent = g.text;
+    this.els.gpsDist.textContent = g.dist > 0 ? fmtDistance(g.dist) : '';
+    const mins = Math.max(0, Math.round(g.eta / 60));
+    this.els.gpsEta.textContent = g.eta > 0 ? `· ${mins < 1 ? '< 1' : mins} min` : '';
+    this.els.gpsLeft.textContent = g.remaining > 0 ? `· ${fmtDistance(g.remaining)} restants` : '';
+    // état « recalcul… » : le GPS vient de repartir d'une nouvelle position
+    const fresh = ctx.gps && ctx.gps._t - ctx.gps._lastRecalcAt < 0.9;
+    this.els.gpsPanel.classList.toggle('rerouting', !!fresh);
   }
 
   _bearing(vx, vz) { return ((Math.atan2(vx, -vz) * 180 / Math.PI) + 360) % 360; }

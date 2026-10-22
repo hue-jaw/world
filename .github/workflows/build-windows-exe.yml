@@ -50,7 +50,7 @@ jobs:
         run: |
           FAILED=0
           : > ci-test-report.txt
-          for t in smoke_test test_features test_integration test_v04 test_v05 test_v06 check_assets test_render; do
+          for t in smoke_test test_features test_integration test_v04 test_v05 test_v06 test_v07 check_assets test_render; do
             echo "== $t" | tee -a ci-test-report.txt
             if node "tools/$t.mjs" > "out_$t.log" 2>&1; then
               tail -n 2 "out_$t.log"
@@ -115,6 +115,8 @@ jobs:
           NOTES="$NOTES Double-cliquez : le jeu demarre dans sa propre fenetre (F11 plein ecran, F12 outils)."
           NOTES="$NOTES Cette version corrige les facades etirees (UV metriques + tuile d'etages), les PNJ dans les arbres,"
           NOTES="$NOTES le saut A/Espace (buffer d'appui), L3, et la saccade + le joueur invisible en moto."
+          NOTES="$NOTES GPS TEMPS REEL : fleches, ruban et mini-carte repartent de votre position ; itineraire recalcule"
+          NOTES="$NOTES automatiquement des que vous quittez la route, avec prochaine manoeuvre, distance restante et temps."
           NOTES="$NOTES Ville variable et asymetrique, rues nommees, sens uniques, giratoires,"
           NOTES="$NOTES canal avec 129 ponts, autoroute peripherique, police, drift, GPS au sol,"
           NOTES="$NOTES economie, manettes Xbox/PS, 100% hors-ligne, aucun droit administrateur."
@@ -124,7 +126,7 @@ jobs:
             # branche par défaut. Le tag v0.6.0 a dû être déplacé à la main
             # (il pointait sur main, sans le code de la version).
             gh release create "$TAG" --repo "$REPO" --target "$GITHUB_SHA" \
-              --title "METROPOLIS $TAG - facades, arbres, saut, L3 et moto corriges" \
+              --title "METROPOLIS $TAG - GPS temps reel : fleches et itineraire recalcules" \
               --notes "$NOTES"
           fi
           gh release upload "$TAG" desktop/release/*.exe --repo "$REPO" --clobber

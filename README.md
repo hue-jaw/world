@@ -40,10 +40,34 @@ npm start              # http://localhost:8000
 ## 🧪 Tests & build
 
 ```bash
-npm test        # 19 (simulation) + 42 (fonctionnalités) + 15 (intégration) + 112 (assets 3D)
-node tools/test_v04.mjs   # 24 vérifications propres à la v0.4
+npm test        # 283 vérifications : smoke, fonctionnalités, intégration, v0.4→v0.7,
+                # assets 3D, rendu, bundle livrable
 npm run build   # régénère METROPOLIS.html (fichier unique, double-cliquable)
 ```
+
+| Suite | Contrôles | Couvre |
+|---|---|---|
+| `smoke_test` | 19 | simulation 30 s, mission, conduite, police, météo, sauvegarde |
+| `test_features` | 42 | systèmes de gameplay |
+| `test_integration` | 15 | UI + économie + GPS + boucle |
+| `test_v04` / `test_v05` | 25 / 20 | poursuite, drift, ville variable, ponts |
+| `test_v06` | 20 | façades, arbres, saut, L3, moto |
+| `test_v07` | 19 | **GPS temps réel** : recalcul, flèches, manœuvres |
+| `check_assets` | 112 | 13 modèles 3D embarqués |
+| `test_render` / `test_bundle` | 7 / 4 | rendu sans GPU, fichier livré |
+
+## 🧭 v0.7 — GPS temps réel
+
+- **Les flèches suivent le joueur** : toute la géométrie (chevrons, ruban bleu,
+  mini-carte) repart de la position réelle, pas du point où la destination a
+  été posée.
+- **Recalcul automatique** : sortie de route détectée à plus de 20 m, ou
+  rafraîchissement toutes les 2,5 s de conduite. A* mesuré à **0,62 ms** pour
+  2,3 km — donc sans saccade, sans worker.
+- **Prochaine manœuvre** dans un bandeau : `⬅ Tournez à gauche · Rue des
+  Tanneurs — 180 m · 4 min · 1,9 km restants`.
+- **Arrivée** détectée à moins de 14 m : flèches et ruban s'éteignent.
+- Détail et mesures : [`docs/10_GPS_TEMPS_REEL_v0.7.md`](docs/10_GPS_TEMPS_REEL_v0.7.md).
 
 ## 🚨 v0.4 — poursuite, drift, GPS, caméra et menu
 
@@ -155,6 +179,8 @@ Les personnages, véhicules et l'avatar du joueur sont de **vrais modèles 3D** 
 | [`docs/01_ARCHITECTURE.md`](docs/01_ARCHITECTURE.md) | Systèmes, dépendances, bus d'événements, LOD de simulation, data-driven, mapping web ↔ UE5 |
 | [`docs/02_PLAN_DE_PRODUCTION.md`](docs/02_PLAN_DE_PRODUCTION.md) | Phases 1→5, critères de sortie, backlog immédiat |
 | [`docs/03_RISQUES_ET_PERFORMANCE.md`](docs/03_RISQUES_ET_PERFORMANCE.md) | Budgets chiffrés par plateforme et par système, 10 risques majeurs et mitigations |
+| [`docs/09_FIX_V0.6.md`](docs/09_FIX_V0.6.md) | Correctifs façades / arbres / saut / L3 / moto, avec mesures |
+| [`docs/10_GPS_TEMPS_REEL_v0.7.md`](docs/10_GPS_TEMPS_REEL_v0.7.md) | GPS temps réel : projection, recalcul, manœuvres, coût A* |
 
 ## 📁 Structure
 
